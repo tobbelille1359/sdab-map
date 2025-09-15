@@ -35,6 +35,12 @@
     const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
     // SDAB logo used as marker glyph (PNG)
     const SDAB_LOGO_URL = "https://i.imgur.com/b3u0LJS.png";
+    // Map defaults
+    const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
+    const DEFAULT_ZOOM   = 5;
+
+    // Map ID for vector map (needed for Advanced Markers)
+    const MAP_ID = "DEMO_MAP_ID"; // byt till din egen när du skapat en i Google Cloud Console
 
     // Map defaults
     const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
@@ -132,7 +138,8 @@
       const map = new google.maps.Map(document.getElementById("map"), {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
-        mapTypeControl: true
+        mapTypeControl: true,
+        mapId: MAP_ID // 👈 viktigt för AdvancedMarkerElement
       });
 
       try {
