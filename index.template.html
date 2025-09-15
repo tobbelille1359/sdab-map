@@ -116,33 +116,38 @@ const SDAB_LOGO_URL = "sdab_small.png";
     }
 
 /* Cluster renderer: light background, thin dark border, dark number.
-   Also scales size by count and is defensive about numeric values. */
+   Robust against bad/empty counts so viewBox is always valid. */
 function clusterRenderer({ count, position }) {
-  const n = Number(count) || 0;
+  // Coerce to integer and clamp to >= 1
+  const n = Number.parseInt(String(count ?? "").trim(), 10);
+  const c = Number.isFinite(n) && n > 0 ? n : 1;
 
   // Size buckets
   let outer = 52, inner = 34, font = 16;
-  if (n >= 50 && n < 200) { outer = 60; inner = 40; font = 18; }
-  else if (n >= 200)      { outer = 70; inner = 46; font = 20; }
+  if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
+  else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
+
+  // Ensure integers
+  outer = Math.round(outer);
+  inner = Math.round(inner);
 
   const svgNS = "http://www.w3.org/2000/svg";
   const svg   = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);  // <= valid even when scaled
+  svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);
   svg.setAttribute("width", String(outer));
   svg.setAttribute("height", String(outer));
 
   const cx = outer / 2;
   const cy = outer / 2;
-  const rOuter = (outer / 2) - 1;   // thin border
-  const rInner = inner / 2;
+  const rOuter = Math.max(1, (outer / 2) - 1); // thin border
+  const rInner = Math.max(1, inner / 2);
 
-  // Colors (inline hex for clarity)
-  const BG_LIGHT    = "#D9E0D9";  // light background
-  const BORDER_DARK = "#0A4003";  // dark ring
-  const INNER_LIGHT = "#D9E0D9";  // same light shade (flat look)
-  const NUM_DARK    = "#0A4003";  // dark number
+  // SDAB colors
+  const BG_LIGHT    = "#D9E0D9"; // light background
+  const BORDER_DARK = "#0A4003"; // dark border
+  const NUM_DARK    = "#0A4003"; // dark number
 
-  // Outer ring (light fill + thin dark stroke)
+  // Outer ring
   const ring = document.createElementNS(svgNS, "circle");
   ring.setAttribute("cx", String(cx));
   ring.setAttribute("cy", String(cy));
@@ -152,15 +157,15 @@ function clusterRenderer({ count, position }) {
   ring.setAttribute("stroke-width", "1.5");
   svg.appendChild(ring);
 
-  // Inner disk (light fill for soft badge)
+  // Inner disk (same light color -> flat badge)
   const innerDisk = document.createElementNS(svgNS, "circle");
   innerDisk.setAttribute("cx", String(cx));
   innerDisk.setAttribute("cy", String(cy));
   innerDisk.setAttribute("r",  String(rInner));
-  innerDisk.setAttribute("fill", INNER_LIGHT);
+  innerDisk.setAttribute("fill", BG_LIGHT);
   svg.appendChild(innerDisk);
 
-  // Count text (dark, centered; slight stroke for readability on any bg)
+  // Centered dark number (tiny white outline for readability)
   const text = document.createElementNS(svgNS, "text");
   text.setAttribute("x", String(cx));
   text.setAttribute("y", String(cy));
@@ -172,7 +177,7 @@ function clusterRenderer({ count, position }) {
   text.setAttribute("paint-order", "stroke");
   text.setAttribute("stroke", "rgba(255,255,255,0.6)");
   text.setAttribute("stroke-width", "1");
-  text.textContent = String(n);
+  text.textContent = String(c);
   svg.appendChild(text);
 
   return new google.maps.marker.AdvancedMarkerElement({
@@ -180,7 +185,6 @@ function clusterRenderer({ count, position }) {
     content: svg
   });
 }
-
     // ===== INIT MAP =====
     async function initMap() {
       const badgeEl   = document.getElementById("badge");
