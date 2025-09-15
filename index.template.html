@@ -25,41 +25,27 @@
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
+  <!-- MarkerClusterer -->
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
   <script>
-    
-    const GMAPS_KEY = "$GMAPS_KEY";
-    const FF_USER   = "$FF_USER";
-    const FF_PWD    = "$FF_PWD";
+    // Azure Function URL (byt till din egen deployment)
+    const apiUrl = "https://<DIN_FUNCTION_APP>.azurewebsites.net/api/pickup-places";
 
-    const baseUrl = "https://97e95921-45eb-4b68-be9c-e9ee73d893ee.test.app.flowfactory.se";
-
-    const loginUrl = `${baseUrl}/Auth/LoginAPI?username=${encodeURIComponent(FF_USER)}&password=${encodeURIComponent(FF_PWD)}`;
-    const dataUrl  = `${baseUrl}/externalapi/V1/PickuPlace/getPickupPlaces`;
-
+    // Google Maps settings
     const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
     const DEFAULT_ZOOM   = 5;
 
     async function loadMaps() {
       const s = document.createElement('script');
-      s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(GMAPS_KEY) + "&callback=initMap";
+      s.src = "https://maps.googleapis.com/maps/api/js?key=$GMAPS_KEY&callback=initMap"; 
+      // OBS: $GMAPS_KEY ersätts i GitHub Actions via envsubst
       s.async = true;
       document.head.appendChild(s);
     }
 
-    async function loginAndGetToken() {
-      const res = await fetch(loginUrl, { method: "POST" });
-      if (!res.ok) throw new Error("Login misslyckades");
-      const json = await res.json();
-      console.log("Login response", json); // debug
-      return json?.AccessToken || null;
-    }
-
-    async function fetchPickupPlaces(token) {
-      const res = await fetch(dataUrl, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+    async function fetchPickupPlaces() {
+      const res = await fetch(apiUrl, { method: "GET" });
       if (!res.ok) throw new Error("Kunde inte hämta pickup places");
       return res.json();
     }
@@ -81,11 +67,8 @@
       });
 
       try {
-        
-        const token = await loginAndGetToken();
-
-       
-        const data = await fetchPickupPlaces(token);
+        // Hämta pickup places direkt via din Function
+        const data = await fetchPickupPlaces();
         const pins = Array.isArray(data?.Pins) ? data.Pins : [];
         badgeEl.textContent = `${pins.length} platser`;
 
@@ -136,8 +119,10 @@
       });
     }
 
+    // Exponera för Google Maps callback
     window.initMap = initMap;
 
+    // Starta laddning av Google Maps
     loadMaps().catch((err) => {
       console.error('Failed to load Google Maps script:', err);
     });
