@@ -122,6 +122,9 @@
   cursor: pointer;
   color: #0A4003;
 }
+/* Ensure the content area allows clicks and isn't clipping */
+.gm-style-iw-d { overflow: visible !important; }
+.sdab-card, .sdab-close { pointer-events: auto; }
 
   </style>
 </head>
@@ -308,9 +311,8 @@ function clusterRenderer({ count, position }) {
 
           const marker = makeAdvancedMarker(pos, p.name ?? "");
 
-         marker.addListener("gmp-click", () => {
-  // unik id för knappen (så vi kan hitta rätt element)
-  const closeId = "sdab-close-" + Math.random().toString(36).slice(2, 8);
+        marker.addListener("gmp-click", () => {
+  const closeId = "sdab-close-" + Date.now() + Math.random().toString(36).slice(2, 6);
 
   const html = `
     <div class="sdab-card">
@@ -325,21 +327,28 @@ function clusterRenderer({ count, position }) {
     </div>
   `;
 
-  infoWindow.setContent(html);
-  infoWindow.setPosition(pos);
-  infoWindow.open({ map });
-
-  // Vänta tills DOMen för InfoWindow är insatt, koppla därefter click
+  // 1) Attach domready listener BEFORE opening
   google.maps.event.addListenerOnce(infoWindow, "domready", () => {
     const btn = document.getElementById(closeId);
     if (btn) {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        infoWindow.close();           // <-- stänger direkt
+        infoWindow.close();        // ✅ closes immediately
       });
     }
   });
+
+  // 2) Now set content and open
+  infoWindow.setContent(html);
+  // (optional) anchor to the marker for better positioning
+  if (google.maps.marker && google.maps.marker.AdvancedMarkerElement &&
+      marker instanceof google.maps.marker.AdvancedMarkerElement) {
+    infoWindow.open({ map, anchor: marker });
+  } else {
+    infoWindow.setPosition(pos);
+    infoWindow.open({ map });
+  }
 });
 
           markers.push(marker);
