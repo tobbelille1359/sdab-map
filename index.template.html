@@ -110,6 +110,19 @@
 .sdab-card__panel {
   border-radius: 12px;   /* was 22px */
 }
+
+.gm-ui-hover-effect { display: none !important; }
+
+.sdab-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #0A4003;
+}
+
   </style>
 </head>
 <body>
@@ -299,7 +312,8 @@ function clusterRenderer({ count, position }) {
   const html = `
     <div class="sdab-card">
       <div class="sdab-card__header">
-        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="SDAB">
+        <button class="sdab-close" onclick="google.maps.event.trigger(window.infoWindow,'closeclick')">×</button>
       </div>
       <div class="sdab-card__panel">
         <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
@@ -310,6 +324,7 @@ function clusterRenderer({ count, position }) {
   infoWindow.setContent(html);
   infoWindow.setPosition(pos);
   infoWindow.open({ map });
+  window.infoWindow = infoWindow;
 });
 
           markers.push(marker);
