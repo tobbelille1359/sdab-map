@@ -25,10 +25,8 @@
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
-  <!-- Google Maps API -->
-  <script async
-    src="https://maps.googleapis.com/maps/api/js?key=xxx&callback=initMap">
-  </script>
+  <!-- Map script will be loaded dynamically via loadMaps() -->
+
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
 <script>
@@ -135,11 +133,16 @@
     }
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, s => (
-      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s]
-    ));
-  }
+ function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (s) => {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s];
+  });
+} Expose initMap globally
+ window.initMap = initMap;
+  // Load Google Maps script
+  loadMaps().catch((err) => {
+    console.error('Failed to load Google Maps script:', err);
+  });
 </script>
 </body>
 </html>
