@@ -8,6 +8,7 @@
     /* English comments in CSS per your preference */
     html, body { height: 100%; margin: 0; }
     #map { width: 100%; height: 100vh; }
+
     .loading {
       position: fixed; inset: 0; display: grid; place-items: center;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -19,6 +20,32 @@
       background: rgba(255,255,255,0.9); border: 1px solid #ddd;
       padding: 6px 8px; border-radius: 6px;
     }
+
+    /* === Advanced marker "badge" with SDAB logo === */
+    .sdab-pin {
+      /* Size of the circular marker */
+      width: 34px; height: 34px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: #ffffff;                         /* inner bg */
+      border: 3px solid var(--sdab-green, #2E7D32);/* green border */
+      box-shadow: 0 2px 8px rgba(0,0,0,.28);       /* pop! */
+      transform: translate3d(0,0,0);
+    }
+    .sdab-pin img {
+      width: 18px; height: 18px; display: block; border-radius: 50%;
+    }
+
+    /* === Nicer InfoWindow content === */
+    .infocard {
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      max-width: 320px;
+    }
+    .infocard .title {
+      font-size: 16px; font-weight: 700; margin: 0 0 4px 0;
+    }
+    .infocard .addr {
+      color: #374151;
+    }
   </style>
 </head>
 <body>
@@ -26,27 +53,33 @@
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
-  <!-- MarkerClusterer (supports Advanced Markers) -->
+  <!-- MarkerClusterer (works with Advanced Markers) -->
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
   <script>
     // ===== CONFIG =====
-    // Your Azure Function endpoint (no code param since it's Anonymous)
+    // Replace with your Azure Function endpoint
     const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
-    // SDAB logo used as marker glyph (PNG)
+
+    // SDAB logo used inside the circular marker
     const SDAB_LOGO_URL = "https://i.imgur.com/b3u0LJS.png";
 
-    // Map ID for vector map (needed for Advanced Markers)
-    const MAP_ID = "DEMO_MAP_ID"; // byt till din egen när du skapat en i Google Cloud Console
+    // SDAB-ish palette (tweak freely)
+    const SDAB_BLUE  = "#1E88E5";  // cluster outer ring
+    const SDAB_BLUE_DARK = "#0D47A1";
+    const SDAB_GREEN = "#2E7D32";  // cluster inner fill & pin border
 
     // Map defaults
     const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
     const DEFAULT_ZOOM   = 5;
 
+    // Vector map id (required for Advanced Markers). Replace with your own later.
+    const MAP_ID = "DEMO_MAP_ID";
+
     // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
     async function loadMaps() {
       const s = document.createElement('script');
-      // v=weekly for latest; libraries=marker for AdvancedMarkerElement
+      // v=weekly + libraries=marker for AdvancedMarkerElement
       s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&key=$GMAPS_KEY&callback=initMap";
       s.async = true;
       document.head.appendChild(s);
@@ -66,61 +99,60 @@
       return { lat, lng };
     }
 
-    // ===== ADVANCED MARKER FACTORY =====
-    function makeAdvancedMarker(pos, title, colorHex = "#1E88E5", borderHex = "#0D47A1") {
-      // Create glyph (logo image)
-      const img = document.createElement("img");
-      img.src = SDAB_LOGO_URL;
-      img.alt = "SDAB";
-      img.style.width = "18px";
-      img.style.height = "18px";
-      img.style.display = "block";
+    // ===== ADVANCED MARKER (circular badge with logo) =====
+    function makeAdvancedMarker(pos, title) {
+      const el = document.createElement("div");
+      el.className = "sdab-pin";
+      el.style.setProperty("--sdab-green", SDAB_GREEN);
+      el.innerHTML = `<img src="${SDAB_LOGO_URL}" alt="SDAB">`;
 
-      // Build a PinElement with custom colors and the logo glyph
-      const pin = new google.maps.marker.PinElement({
-        background: colorHex,
-        borderColor: borderHex,
-        glyph: img
-      });
-
-      // Optional: subtle shadow to make it pop
-      pin.element.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,.3))";
-
+      // AdvancedMarkerElement with custom HTML content
       return new google.maps.marker.AdvancedMarkerElement({
         position: pos,
         title,
-        content: pin.element
+        content: el
       });
     }
 
-    // ===== CLUSTER RENDERER (simple SVG badge) =====
+    // ===== CLUSTER RENDERER (SDAB colors) =====
     function clusterRenderer({ count, position }) {
       const svgNS = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(svgNS, "svg");
-      svg.setAttribute("viewBox", "0 0 44 44");
-      svg.setAttribute("width", "44");
-      svg.setAttribute("height", "44");
+      svg.setAttribute("viewBox", "0 0 52 52");
+      svg.setAttribute("width", "52");
+      svg.setAttribute("height", "52");
 
-      const circle = document.createElementNS(svgNS, "circle");
-      circle.setAttribute("cx", "22");
-      circle.setAttribute("cy", "22");
-      circle.setAttribute("r", "20");
-      circle.setAttribute("fill", "#1E88E5");
-      circle.setAttribute("stroke", "#0D47A1");
-      circle.setAttribute("stroke-width", "2");
-      svg.appendChild(circle);
+      // Outer ring (blue)
+      const ring = document.createElementNS(svgNS, "circle");
+      ring.setAttribute("cx", "26");
+      ring.setAttribute("cy", "26");
+      ring.setAttribute("r", "24");
+      ring.setAttribute("fill", SDAB_BLUE);
+      ring.setAttribute("stroke", SDAB_BLUE_DARK);
+      ring.setAttribute("stroke-width", "2");
+      svg.appendChild(ring);
 
+      // Inner circle (green)
+      const inner = document.createElementNS(svgNS, "circle");
+      inner.setAttribute("cx", "26");
+      inner.setAttribute("cy", "26");
+      inner.setAttribute("r", "16");
+      inner.setAttribute("fill", SDAB_GREEN);
+      inner.setAttribute("opacity", "0.95");
+      svg.appendChild(inner);
+
+      // Count label
       const text = document.createElementNS(svgNS, "text");
-      text.setAttribute("x", "22");
-      text.setAttribute("y", "26");
+      text.setAttribute("x", "26");
+      text.setAttribute("y", "31");
       text.setAttribute("text-anchor", "middle");
-      text.setAttribute("font-size", "14");
-      text.setAttribute("font-weight", "700");
+      text.setAttribute("font-size", "16");
+      text.setAttribute("font-weight", "800");
       text.setAttribute("fill", "#fff");
       text.textContent = String(count);
       svg.appendChild(text);
 
-      // Advanced marker for the cluster itself
+      // Use AdvancedMarkerElement for the cluster itself
       return new google.maps.marker.AdvancedMarkerElement({
         position,
         content: svg
@@ -136,7 +168,7 @@
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
         mapTypeControl: true,
-        mapId: MAP_ID // 👈 viktigt för AdvancedMarkerElement
+        mapId: MAP_ID
       });
 
       try {
@@ -152,20 +184,13 @@
           const pos = parseLocationString(p.location);
           if (!pos) continue;
 
-          // Example coloring rule: make some pins red/blue if you have a category/status
-          const isRed = p.status === "warning" || p.category === "partner"; // adjust to your fields
-          const marker = makeAdvancedMarker(
-            pos,
-            p.name ?? "",
-            isRed ? "#E53935" : "#1E88E5",
-            isRed ? "#B71C1C" : "#0D47A1"
-          );
+          const marker = makeAdvancedMarker(pos, p.name ?? "");
 
           marker.addListener("gmp-click", () => {
             infoWindow.setContent(
-              `<div style="font:14px/1.3 system-ui;">
-                <strong>${escapeHtml(p.name ?? "")}</strong><br/>
-                <span>${escapeHtml(p.address ?? "")}</span>
+              `<div class="infocard">
+                <div class="title">${escapeHtml(p.name ?? "")}</div>
+                <div class="addr">${escapeHtml(p.address ?? "")}</div>
               </div>`
             );
             infoWindow.setPosition(pos);
@@ -176,7 +201,7 @@
           bounds.extend(pos);
         }
 
-        // Cluster using Advanced Markers
+        // Cluster using Advanced Markers with SDAB renderer
         new markerClusterer.MarkerClusterer({
           map,
           markers,
