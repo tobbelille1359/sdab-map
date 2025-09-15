@@ -58,7 +58,7 @@
     if (!res.ok) throw new Error("Login misslyckades");
     const json = await res.json();
     console.log("Login response", json); // debug
-    return json?.token || json?.Token || null;
+    return json?.AccessToken || null;
   }
 
   async function fetchPickupPlaces(token) {
