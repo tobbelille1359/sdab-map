@@ -25,124 +25,125 @@
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
-  <!-- Map script will be loaded dynamically via loadMaps() -->
-
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
-<script>
-  // Dessa ersätts av GitHub Actions vid build
-  const GMAPS_KEY = "__GMAPS_KEY__";
-  const FF_USER   = "__FF_USER__";
-  const FF_PWD    = "__FF_PWD__";
+  <script>
+    // Dessa ersätts av GitHub Actions vid build
+    const GMAPS_KEY = "__GMAPS_KEY__";
+    const FF_USER   = "__FF_USER__";
+    const FF_PWD    = "__FF_PWD__";
 
-  // Byt baseUrl när du går till prod
-  const baseUrl = "https://97e95921-45eb-4b68-be9c-e9ee73d893ee.test.app.flowfactory.se";
+    // Byt baseUrl när du går till prod
+    const baseUrl = "https://97e95921-45eb-4b68-be9c-e9ee73d893ee.test.app.flowfactory.se";
 
-  const loginUrl = `${baseUrl}/Auth/LoginAPI?username=${encodeURIComponent(FF_USER)}&password=${encodeURIComponent(FF_PWD)}`;
-  const dataUrl  = `${baseUrl}/externalapi/V1/PickuPlace/getPickupPlaces`;
+    const loginUrl = `${baseUrl}/Auth/LoginAPI?username=${encodeURIComponent(FF_USER)}&password=${encodeURIComponent(FF_PWD)}`;
+    const dataUrl  = `${baseUrl}/externalapi/V1/PickuPlace/getPickupPlaces`;
 
-  const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
-  const DEFAULT_ZOOM   = 5;
+    const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
+    const DEFAULT_ZOOM   = 5;
 
-  async function loadMaps() {
-    const s = document.createElement('script');
-    s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(GMAPS_KEY) + "&callback=initMap";
-    s.async = true;
-    document.head.appendChild(s);
-  }
-
-  async function loginAndGetToken() {
-    const res = await fetch(loginUrl, { method: "POST" });
-    if (!res.ok) throw new Error("Login misslyckades");
-    const json = await res.json();
-    console.log("Login response", json); // debug
-    return json?.AccessToken || null;
-  }
-
-  async function fetchPickupPlaces(token) {
-    const res = await fetch(dataUrl, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error("Kunde inte hämta pickup places");
-    return res.json();
-  }
-
-  function parseLocationString(loc) {
-    if (!loc) return null;
-    const [lat, lng] = loc.split(",").map(Number);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-    return { lat, lng };
-  }
-
-  async function initMap() {
-    const badgeEl   = document.getElementById("badge");
-    const loadingEl = document.getElementById("loading");
-
-    const map = new google.maps.Map(document.getElementById("map"), {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-    });
-
-    try {
-      // 1. Login
-      const token = await loginAndGetToken();
-
-      // 2. Hämta platser
-      const data = await fetchPickupPlaces(token);
-      const pins = Array.isArray(data?.Pins) ? data.Pins : [];
-      badgeEl.textContent = `${pins.length} platser`;
-
-      const markers = [];
-      const bounds = new google.maps.LatLngBounds();
-      const infoWindow = new google.maps.InfoWindow();
-
-      for (const p of pins) {
-        const pos = parseLocationString(p.location);
-        if (!pos) continue;
-
-        const marker = new google.maps.Marker({ position: pos, title: p.name });
-
-        marker.addListener("click", () => {
-          infoWindow.setContent(
-            `<div style="font:14px/1.3 system-ui;">
-              <strong>${escapeHtml(p.name)}</strong><br/>
-              <span>${escapeHtml(p.address)}</span>
-            </div>`
-          );
-          infoWindow.open(map, marker);
-        });
-
-        markers.push(marker);
-        bounds.extend(pos);
-      }
-
-      new markerClusterer.MarkerClusterer({ map, markers });
-
-      if (markers.length > 1) {
-        map.fitBounds(bounds);
-        google.maps.event.addListenerOnce(map, "idle", () => {
-          if (map.getZoom() > 12) map.setZoom(12);
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      badgeEl.textContent = "Fel vid laddning";
-      alert("Kunde inte ladda kartan.");
-    } finally {
-      loadingEl.style.display = "none";
+    async function loadMaps() {
+      const s = document.createElement('script');
+      s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(GMAPS_KEY) + "&callback=initMap";
+      s.async = true;
+      document.head.appendChild(s);
     }
-  }
 
- function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (s) => {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s];
-  });
-} Expose initMap globally
- window.initMap = initMap;
-  // Load Google Maps script
-  loadMaps().catch((err) => {
-    console.error('Failed to load Google Maps script:', err);
-  });
-</script>
+    async function loginAndGetToken() {
+      const res = await fetch(loginUrl, { method: "POST" });
+      if (!res.ok) throw new Error("Login misslyckades");
+      const json = await res.json();
+      console.log("Login response", json); // debug
+      return json?.AccessToken || null;
+    }
+
+    async function fetchPickupPlaces(token) {
+      const res = await fetch(dataUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Kunde inte hämta pickup places");
+      return res.json();
+    }
+
+    function parseLocationString(loc) {
+      if (!loc) return null;
+      const [lat, lng] = loc.split(",").map(Number);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+      return { lat, lng };
+    }
+
+    async function initMap() {
+      const badgeEl   = document.getElementById("badge");
+      const loadingEl = document.getElementById("loading");
+
+      const map = new google.maps.Map(document.getElementById("map"), {
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+      });
+
+      try {
+        // 1. Login
+        const token = await loginAndGetToken();
+
+        // 2. Hämta platser
+        const data = await fetchPickupPlaces(token);
+        const pins = Array.isArray(data?.Pins) ? data.Pins : [];
+        badgeEl.textContent = `${pins.length} platser`;
+
+        const markers = [];
+        const bounds = new google.maps.LatLngBounds();
+        const infoWindow = new google.maps.InfoWindow();
+
+        for (const p of pins) {
+          const pos = parseLocationString(p.location);
+          if (!pos) continue;
+
+          const marker = new google.maps.Marker({ position: pos, title: p.name });
+
+          marker.addListener("click", () => {
+            infoWindow.setContent(
+              `<div style="font:14px/1.3 system-ui;">
+                <strong>${escapeHtml(p.name)}</strong><br/>
+                <span>${escapeHtml(p.address)}</span>
+              </div>`
+            );
+            infoWindow.open(map, marker);
+          });
+
+          markers.push(marker);
+          bounds.extend(pos);
+        }
+
+        new markerClusterer.MarkerClusterer({ map, markers });
+
+        if (markers.length > 1) {
+          map.fitBounds(bounds);
+          google.maps.event.addListenerOnce(map, "idle", () => {
+            if (map.getZoom() > 12) map.setZoom(12);
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        badgeEl.textContent = "Fel vid laddning";
+        alert("Kunde inte ladda kartan.");
+      } finally {
+        loadingEl.style.display = "none";
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (s) => {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s];
+      });
+    }
+
+    // Expose initMap globally (required by Google Maps callback)
+    window.initMap = initMap;
+
+    // Load Google Maps script
+    loadMaps().catch((err) => {
+      console.error('Failed to load Google Maps script:', err);
+    });
+  </script>
 </body>
 </html>
