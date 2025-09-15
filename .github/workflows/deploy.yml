@@ -19,7 +19,7 @@ jobs:
         run: |
           mkdir -p dist
           # Inject secrets i template -> generera dist/index.html
-          sed "s|__GMAPS_KEY__|${{ secrets.GMAPS_KEY }}|g; s|__FF_USER__|${{ secrets.FF_USER }}|g; s|__FF_PWD__|${{ secrets.FF_PWD }}|g" index.template.html > dist/index.html
+          sed 's|__GMAPS_KEY__|${{ secrets.GMAPS_KEY }}|g; s|__FF_USER__|${{ secrets.FF_USER }}|g; s|__FF_PWD__|${{ secrets.FF_PWD }}|g' index.template.html > dist/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
