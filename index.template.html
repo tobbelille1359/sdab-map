@@ -308,12 +308,15 @@ function clusterRenderer({ count, position }) {
 
           const marker = makeAdvancedMarker(pos, p.name ?? "");
 
-          marker.addListener("gmp-click", () => {
+         marker.addListener("gmp-click", () => {
+  // unik id för knappen (så vi kan hitta rätt element)
+  const closeId = "sdab-close-" + Math.random().toString(36).slice(2, 8);
+
   const html = `
     <div class="sdab-card">
       <div class="sdab-card__header">
-        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="SDAB">
-        <button class="sdab-close" onclick="google.maps.event.trigger(window.infoWindow,'closeclick')">×</button>
+        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+        <button id="${closeId}" class="sdab-close" aria-label="Stäng">×</button>
       </div>
       <div class="sdab-card__panel">
         <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
@@ -321,10 +324,22 @@ function clusterRenderer({ count, position }) {
       </div>
     </div>
   `;
+
   infoWindow.setContent(html);
   infoWindow.setPosition(pos);
   infoWindow.open({ map });
-  window.infoWindow = infoWindow;
+
+  // Vänta tills DOMen för InfoWindow är insatt, koppla därefter click
+  google.maps.event.addListenerOnce(infoWindow, "domready", () => {
+    const btn = document.getElementById(closeId);
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        infoWindow.close();           // <-- stänger direkt
+      });
+    }
+  });
 });
 
           markers.push(marker);
