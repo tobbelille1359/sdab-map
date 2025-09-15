@@ -36,6 +36,7 @@ jobs:
           envsubst < index.template.html > dist/index.html
           # Kopiera loggan (och ev. fler assets)
           cp sdab_small.png dist/ || true
+          cp SDAB_Logo_RGB_Horizontal.png dist/ || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
