@@ -28,12 +28,12 @@
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
   <script>
-    // Dessa ersätts av GitHub Actions vid build
+    
     const GMAPS_KEY = "__GMAPS_KEY__";
     const FF_USER   = "__FF_USER__";
     const FF_PWD    = "__FF_PWD__";
 
-    // Byt baseUrl när du går till prod
+
     const baseUrl = "https://97e95921-45eb-4b68-be9c-e9ee73d893ee.test.app.flowfactory.se";
 
     const loginUrl = `${baseUrl}/Auth/LoginAPI?username=${encodeURIComponent(FF_USER)}&password=${encodeURIComponent(FF_PWD)}`;
@@ -82,10 +82,10 @@
       });
 
       try {
-        // 1. Login
+        
         const token = await loginAndGetToken();
 
-        // 2. Hämta platser
+       
         const data = await fetchPickupPlaces(token);
         const pins = Array.isArray(data?.Pins) ? data.Pins : [];
         badgeEl.textContent = `${pins.length} platser`;
@@ -137,10 +137,8 @@
       });
     }
 
-    // Expose initMap globally (required by Google Maps callback)
     window.initMap = initMap;
 
-    // Load Google Maps script
     loadMaps().catch((err) => {
       console.error('Failed to load Google Maps script:', err);
     });
