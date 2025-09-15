@@ -1,34 +1,54 @@
 name: Deploy Pages with secrets
+
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ main ]
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
       - name: Prepare dist
+        env:
+          GMAPS_KEY: ${{ secrets.GMAPS_KEY }}
+          FF_USER:   ${{ secrets.FF_USER }}
+          FF_PWD:    ${{ secrets.FF_PWD }}
         run: |
+          set -e
           mkdir -p dist
-          # Inject secrets i template -> generera dist/index.html
-          sed 's|__GMAPS_KEY__|${{ secrets.GMAPS_KEY }}|g; s|__FF_USER__|${{ secrets.FF_USER }}|g; s|__FF_PWD__|${{ secrets.FF_PWD }}|g' index.template.html > dist/index.html
+          # Bygg index.html från template genom att ersätta $GMAPS_KEY, $FF_USER, $FF_PWD
+          envsubst < index.template.html > dist/index.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
   deploy:
-    needs: build
     runs-on: ubuntu-latest
+    needs: build
     environment:
       name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
