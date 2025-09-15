@@ -1,4 +1,4 @@
-name: Deploy Pages with secrets
+name: Deploy Pages (SDAB map)
 
 on:
   push:
@@ -26,16 +26,16 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Prepare dist
+      - name: Build dist
         env:
           GMAPS_KEY: ${{ secrets.GMAPS_KEY }}
-          FF_USER:   ${{ secrets.FF_USER }}
-          FF_PWD:    ${{ secrets.FF_PWD }}
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p dist
-          # Bygg index.html från template genom att ersätta $GMAPS_KEY, $FF_USER, $FF_PWD
+          # Ersätt $GMAPS_KEY i templaten
           envsubst < index.template.html > dist/index.html
+          # Kopiera loggan (och ev. fler assets)
+          cp sdab_small.png dist/ || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
