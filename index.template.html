@@ -49,6 +49,45 @@
     .infocard .addr {
       color: #374151;
     }
+	/* Brandad info card (outer frame + inner panel) */
+/* English comments as requested */
+.sdab-card {
+  --sdab-bg: #D9E0D9;      /* light beige/green */
+  --sdab-border: #0A4003;  /* dark green */
+  --sdab-shadow: 0 10px 24px rgba(0,0,0,.18);
+
+  background: var(--sdab-bg);
+  border: 6px solid var(--sdab-border);
+  border-radius: 28px;
+  box-shadow: var(--sdab-shadow);
+  padding: 16px 18px 18px;
+  max-width: min(480px, 86vw);
+  font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #0A4003;
+}
+
+/* header row with logo */
+.sdab-card__header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+}
+.sdab-card__logo {
+  height: 28px; width: auto; display: block;
+}
+
+/* inner white panel */
+.sdab-card__panel {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 14px 16px;
+  border: 1px solid #E5E7EB; /* subtle */
+}
+
+/* title + address */
+.sdab-card__title {
+  font-size: 18px; font-weight: 800; margin: 0 0 6px 0; color: #0A4003;
+}
+.sdab-card__addr { margin: 0; color: #374151; }
   </style>
 </head>
 <body>
@@ -235,15 +274,21 @@ function clusterRenderer({ count, position }) {
           const marker = makeAdvancedMarker(pos, p.name ?? "");
 
           marker.addListener("gmp-click", () => {
-            infoWindow.setContent(
-              `<div class="infocard">
-                <div class="title">${escapeHtml(p.name ?? "")}</div>
-                <div class="addr">${escapeHtml(p.address ?? "")}</div>
-              </div>`
-            );
-            infoWindow.setPosition(pos);
-            infoWindow.open({ map });
-          });
+  const html = `
+    <div class="sdab-card">
+      <div class="sdab-card__header">
+        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+      </div>
+      <div class="sdab-card__panel">
+        <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
+        <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
+      </div>
+    </div>
+  `;
+  infoWindow.setContent(html);
+  infoWindow.setPosition(pos);
+  infoWindow.open({ map });
+});
 
           markers.push(marker);
           bounds.extend(pos);
