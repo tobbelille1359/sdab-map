@@ -65,9 +65,9 @@
     const SDAB_LOGO_URL = "https://i.imgur.com/b3u0LJS.png";
 
     // SDAB-ish palette (tweak freely)
-    const SDAB_BLUE  = "#1E88E5";  // cluster outer ring
-    const SDAB_BLUE_DARK = "#0D47A1";
-    const SDAB_GREEN = "#2E7D32";  // cluster inner fill & pin border
+    const SDAB_BACKGROUND  = "#D9E0D9";  // cluster outer ring
+    const SDAB_GREEN_DARK = "#0A4003";
+    const SDAB_GREEN_LIGHT = "#697760";  // cluster inner fill & pin border
 
     // Map defaults
     const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
@@ -103,7 +103,7 @@
     function makeAdvancedMarker(pos, title) {
       const el = document.createElement("div");
       el.className = "sdab-pin";
-      el.style.setProperty("--sdab-green", SDAB_GREEN);
+      el.style.setProperty("--sdab-green", SDAB_GREEN_DARK);
       el.innerHTML = `<img src="${SDAB_LOGO_URL}" alt="SDAB">`;
 
       // AdvancedMarkerElement with custom HTML content
@@ -114,50 +114,67 @@
       });
     }
 
-    // ===== CLUSTER RENDERER (SDAB colors) =====
-    function clusterRenderer({ count, position }) {
-      const svgNS = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(svgNS, "svg");
-      svg.setAttribute("viewBox", "0 0 52 52");
-      svg.setAttribute("width", "52");
-      svg.setAttribute("height", "52");
+    // SDAB-kontrasterande kluster-renderer (skalar storlek efter count)
+/* JS comments in English */
+function clusterRenderer({ count, position }) {
+  // --- size buckets (tweak thresholds freely) ---
+  let outer = 52, inner = 34, font = 16;
+  if (count >= 50 && count < 200) { outer = 60; inner = 40; font = 18; }
+  else if (count >= 200) { outer = 70; inner = 46; font = 20; }
 
-      // Outer ring (blue)
-      const ring = document.createElementNS(svgNS, "circle");
-      ring.setAttribute("cx", "26");
-      ring.setAttribute("cy", "26");
-      ring.setAttribute("r", "24");
-      ring.setAttribute("fill", SDAB_BLUE);
-      ring.setAttribute("stroke", SDAB_BLUE_DARK);
-      ring.setAttribute("stroke-width", "2");
-      svg.appendChild(ring);
+  const cx = outer / 2;
+  const cy = outer / 2;
+  const rOuter = (outer / 2) - 2; // allow 2px stroke
+  const rInner = inner / 2;
 
-      // Inner circle (green)
-      const inner = document.createElementNS(svgNS, "circle");
-      inner.setAttribute("cx", "26");
-      inner.setAttribute("cy", "26");
-      inner.setAttribute("r", "16");
-      inner.setAttribute("fill", SDAB_GREEN);
-      inner.setAttribute("opacity", "0.95");
-      svg.appendChild(inner);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);
+  svg.setAttribute("width", String(outer));
+  svg.setAttribute("height", String(outer));
 
-      // Count label
-      const text = document.createElementNS(svgNS, "text");
-      text.setAttribute("x", "26");
-      text.setAttribute("y", "31");
-      text.setAttribute("text-anchor", "middle");
-      text.setAttribute("font-size", "16");
-      text.setAttribute("font-weight", "800");
-      text.setAttribute("fill", "#fff");
-      text.textContent = String(count);
-      svg.appendChild(text);
+  // Outer ring (light background with darker stroke)
+  const ring = document.createElementNS(svgNS, "circle");
+  ring.setAttribute("cx", String(cx));
+  ring.setAttribute("cy", String(cy));
+  ring.setAttribute("r", String(rOuter));
+  ring.setAttribute("fill", SDAB_BACKGROUND);   // e.g. #D9E0D9
+  ring.setAttribute("stroke", SDAB_GREEN_DARK); // e.g. #0A4003
+  ring.setAttribute("stroke-width", "2");
+  svg.appendChild(ring);
 
-      // Use AdvancedMarkerElement for the cluster itself
-      return new google.maps.marker.AdvancedMarkerElement({
-        position,
-        content: svg
-      });
-    }
+  // Inner disk (darker fill for contrast)
+  const innerDisk = document.createElementNS(svgNS, "circle");
+  innerDisk.setAttribute("cx", String(cx));
+  innerDisk.setAttribute("cy", String(cy));
+  innerDisk.setAttribute("r", String(rInner));
+  innerDisk.setAttribute("fill", SDAB_GREEN_LIGHT); // e.g. #697760
+  innerDisk.setAttribute("opacity", "0.98");
+  svg.appendChild(innerDisk);
+
+  // Count text with subtle outline for readability
+  // Centering: x/y at center + dominant-baseline middle
+  const text = document.createElementNS(svgNS, "text");
+  text.setAttribute("x", String(cx));
+  text.setAttribute("y", String(cy));
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("dominant-baseline", "middle");
+  text.setAttribute("font-size", String(font));
+  text.setAttribute("font-weight", "800");
+  text.setAttribute("fill", "#ffffff");
+  // Optional white text with dark outline to pop on light backgrounds
+  text.setAttribute("paint-order", "stroke");
+  text.setAttribute("stroke", SDAB_GREEN_DARK);
+  text.setAttribute("stroke-width", "1.5");
+  text.textContent = String(count);
+  svg.appendChild(text);
+
+  // Return as AdvancedMarkerElement (required by clusterer)
+  return new google.maps.marker.AdvancedMarkerElement({
+    position,
+    content: svg
+  });
+}
 
     // ===== INIT MAP =====
     async function initMap() {
