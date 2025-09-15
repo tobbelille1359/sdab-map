@@ -88,6 +88,28 @@
   font-size: 18px; font-weight: 800; margin: 0 0 6px 0; color: #0A4003;
 }
 .sdab-card__addr { margin: 0; color: #374151; }
+
+/* Remove the default white bubble from Google InfoWindow */
+.gm-style-iw, .gm-style-iw-c {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Remove the tip arrow shadow */
+.gm-style-iw-t::after, .gm-style-iw-t::before {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.sdab-card {
+  border-radius: 16px;   /* was 28px */
+  border: 5px solid #0A4003;
+  padding: 14px 16px 16px;
+}
+.sdab-card__panel {
+  border-radius: 12px;   /* was 22px */
+}
   </style>
 </head>
 <body>
