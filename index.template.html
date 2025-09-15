@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SDAB – Levande karta</title>
   <style>
+    /* English comments in CSS per your preference */
     html, body { height: 100%; margin: 0; }
     #map { width: 100%; height: 100vh; }
     .loading {
@@ -25,27 +26,32 @@
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
-  <!-- MarkerClusterer -->
+  <!-- MarkerClusterer (supports Advanced Markers) -->
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
   <script>
-    // Azure Function URL (byt till din egen deployment)
-    const apiUrl = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
+    // ===== CONFIG =====
+    // Your Azure Function endpoint (no code param since it's Anonymous)
+    const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
+    // SDAB logo used as marker glyph (PNG)
+    const SDAB_LOGO_URL = "https://i.imgur.com/b3u0LJS.png";
 
-    // Google Maps settings
+    // Map defaults
     const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
     const DEFAULT_ZOOM   = 5;
 
+    // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
     async function loadMaps() {
       const s = document.createElement('script');
-      s.src = "https://maps.googleapis.com/maps/api/js?key=$GMAPS_KEY&callback=initMap"; 
-      // OBS: $GMAPS_KEY ersätts i GitHub Actions via envsubst
+      // v=weekly for latest; libraries=marker for AdvancedMarkerElement
+      s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&key=$GMAPS_KEY&callback=initMap";
       s.async = true;
       document.head.appendChild(s);
     }
 
+    // ===== DATA FETCH =====
     async function fetchPickupPlaces() {
-      const res = await fetch(apiUrl, { method: "GET" });
+      const res = await fetch(API_URL, { method: "GET" });
       if (!res.ok) throw new Error("Kunde inte hämta pickup places");
       return res.json();
     }
@@ -57,6 +63,68 @@
       return { lat, lng };
     }
 
+    // ===== ADVANCED MARKER FACTORY =====
+    function makeAdvancedMarker(pos, title, colorHex = "#1E88E5", borderHex = "#0D47A1") {
+      // Create glyph (logo image)
+      const img = document.createElement("img");
+      img.src = SDAB_LOGO_URL;
+      img.alt = "SDAB";
+      img.style.width = "18px";
+      img.style.height = "18px";
+      img.style.display = "block";
+
+      // Build a PinElement with custom colors and the logo glyph
+      const pin = new google.maps.marker.PinElement({
+        background: colorHex,
+        borderColor: borderHex,
+        glyph: img
+      });
+
+      // Optional: subtle shadow to make it pop
+      pin.element.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,.3))";
+
+      return new google.maps.marker.AdvancedMarkerElement({
+        position: pos,
+        title,
+        content: pin.element
+      });
+    }
+
+    // ===== CLUSTER RENDERER (simple SVG badge) =====
+    function clusterRenderer({ count, position }) {
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("viewBox", "0 0 44 44");
+      svg.setAttribute("width", "44");
+      svg.setAttribute("height", "44");
+
+      const circle = document.createElementNS(svgNS, "circle");
+      circle.setAttribute("cx", "22");
+      circle.setAttribute("cy", "22");
+      circle.setAttribute("r", "20");
+      circle.setAttribute("fill", "#1E88E5");
+      circle.setAttribute("stroke", "#0D47A1");
+      circle.setAttribute("stroke-width", "2");
+      svg.appendChild(circle);
+
+      const text = document.createElementNS(svgNS, "text");
+      text.setAttribute("x", "22");
+      text.setAttribute("y", "26");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("font-size", "14");
+      text.setAttribute("font-weight", "700");
+      text.setAttribute("fill", "#fff");
+      text.textContent = String(count);
+      svg.appendChild(text);
+
+      // Advanced marker for the cluster itself
+      return new google.maps.marker.AdvancedMarkerElement({
+        position,
+        content: svg
+      });
+    }
+
+    // ===== INIT MAP =====
     async function initMap() {
       const badgeEl   = document.getElementById("badge");
       const loadingEl = document.getElementById("loading");
@@ -64,10 +132,10 @@
       const map = new google.maps.Map(document.getElementById("map"), {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
+        mapTypeControl: true
       });
 
       try {
-        // Hämta pickup places direkt via din Function
         const data = await fetchPickupPlaces();
         const pins = Array.isArray(data?.Pins) ? data.Pins : [];
         badgeEl.textContent = `${pins.length} platser`;
@@ -80,23 +148,36 @@
           const pos = parseLocationString(p.location);
           if (!pos) continue;
 
-          const marker = new google.maps.Marker({ position: pos, title: p.name });
+          // Example coloring rule: make some pins red/blue if you have a category/status
+          const isRed = p.status === "warning" || p.category === "partner"; // adjust to your fields
+          const marker = makeAdvancedMarker(
+            pos,
+            p.name ?? "",
+            isRed ? "#E53935" : "#1E88E5",
+            isRed ? "#B71C1C" : "#0D47A1"
+          );
 
-          marker.addListener("click", () => {
+          marker.addListener("gmp-click", () => {
             infoWindow.setContent(
               `<div style="font:14px/1.3 system-ui;">
-                <strong>${escapeHtml(p.name)}</strong><br/>
-                <span>${escapeHtml(p.address)}</span>
+                <strong>${escapeHtml(p.name ?? "")}</strong><br/>
+                <span>${escapeHtml(p.address ?? "")}</span>
               </div>`
             );
-            infoWindow.open(map, marker);
+            infoWindow.setPosition(pos);
+            infoWindow.open({ map });
           });
 
           markers.push(marker);
           bounds.extend(pos);
         }
 
-        new markerClusterer.MarkerClusterer({ map, markers });
+        // Cluster using Advanced Markers
+        new markerClusterer.MarkerClusterer({
+          map,
+          markers,
+          renderer: { render: clusterRenderer }
+        });
 
         if (markers.length > 1) {
           map.fitBounds(bounds);
@@ -119,10 +200,10 @@
       });
     }
 
-    // Exponera för Google Maps callback
+    // Expose for Google Maps callback
     window.initMap = initMap;
 
-    // Starta laddning av Google Maps
+    // Kick off
     loadMaps().catch((err) => {
       console.error('Failed to load Google Maps script:', err);
     });
