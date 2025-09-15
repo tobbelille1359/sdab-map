@@ -61,8 +61,9 @@
     // Replace with your Azure Function endpoint
     const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
 
+
     // SDAB logo used inside the circular marker
-    const SDAB_LOGO_URL = "https://i.imgur.com/b3u0LJS.png";
+const SDAB_LOGO_URL = "sdab_small.png";
 
     // SDAB-ish palette (tweak freely)
     const SDAB_BACKGROUND  = "#D9E0D9";  // cluster outer ring
@@ -114,46 +115,52 @@
       });
     }
 
-    // SDAB-kontrasterande kluster-renderer (skalar storlek efter count)
-/* JS comments in English */
+/* Cluster renderer: light background, thin dark border, dark number.
+   Also scales size by count and is defensive about numeric values. */
 function clusterRenderer({ count, position }) {
-  // --- size buckets (tweak thresholds freely) ---
-  let outer = 52, inner = 34, font = 16;
-  if (count >= 50 && count < 200) { outer = 60; inner = 40; font = 18; }
-  else if (count >= 200) { outer = 70; inner = 46; font = 20; }
+  const n = Number(count) || 0;
 
-  const cx = outer / 2;
-  const cy = outer / 2;
-  const rOuter = (outer / 2) - 2; // allow 2px stroke
-  const rInner = inner / 2;
+  // Size buckets
+  let outer = 52, inner = 34, font = 16;
+  if (n >= 50 && n < 200) { outer = 60; inner = 40; font = 18; }
+  else if (n >= 200)      { outer = 70; inner = 46; font = 20; }
 
   const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);
+  const svg   = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);  // <= valid even when scaled
   svg.setAttribute("width", String(outer));
   svg.setAttribute("height", String(outer));
 
-  // Outer ring (light background with darker stroke)
+  const cx = outer / 2;
+  const cy = outer / 2;
+  const rOuter = (outer / 2) - 1;   // thin border
+  const rInner = inner / 2;
+
+  // Colors (inline hex for clarity)
+  const BG_LIGHT    = "#D9E0D9";  // light background
+  const BORDER_DARK = "#0A4003";  // dark ring
+  const INNER_LIGHT = "#D9E0D9";  // same light shade (flat look)
+  const NUM_DARK    = "#0A4003";  // dark number
+
+  // Outer ring (light fill + thin dark stroke)
   const ring = document.createElementNS(svgNS, "circle");
   ring.setAttribute("cx", String(cx));
   ring.setAttribute("cy", String(cy));
-  ring.setAttribute("r", String(rOuter));
-  ring.setAttribute("fill", SDAB_BACKGROUND);   // e.g. #D9E0D9
-  ring.setAttribute("stroke", SDAB_GREEN_DARK); // e.g. #0A4003
-  ring.setAttribute("stroke-width", "2");
+  ring.setAttribute("r",  String(rOuter));
+  ring.setAttribute("fill", BG_LIGHT);
+  ring.setAttribute("stroke", BORDER_DARK);
+  ring.setAttribute("stroke-width", "1.5");
   svg.appendChild(ring);
 
-  // Inner disk (darker fill for contrast)
+  // Inner disk (light fill for soft badge)
   const innerDisk = document.createElementNS(svgNS, "circle");
   innerDisk.setAttribute("cx", String(cx));
   innerDisk.setAttribute("cy", String(cy));
-  innerDisk.setAttribute("r", String(rInner));
-  innerDisk.setAttribute("fill", SDAB_GREEN_LIGHT); // e.g. #697760
-  innerDisk.setAttribute("opacity", "0.98");
+  innerDisk.setAttribute("r",  String(rInner));
+  innerDisk.setAttribute("fill", INNER_LIGHT);
   svg.appendChild(innerDisk);
 
-  // Count text with subtle outline for readability
-  // Centering: x/y at center + dominant-baseline middle
+  // Count text (dark, centered; slight stroke for readability on any bg)
   const text = document.createElementNS(svgNS, "text");
   text.setAttribute("x", String(cx));
   text.setAttribute("y", String(cy));
@@ -161,15 +168,13 @@ function clusterRenderer({ count, position }) {
   text.setAttribute("dominant-baseline", "middle");
   text.setAttribute("font-size", String(font));
   text.setAttribute("font-weight", "800");
-  text.setAttribute("fill", "#ffffff");
-  // Optional white text with dark outline to pop on light backgrounds
+  text.setAttribute("fill", NUM_DARK);
   text.setAttribute("paint-order", "stroke");
-  text.setAttribute("stroke", SDAB_GREEN_DARK);
-  text.setAttribute("stroke-width", "1.5");
-  text.textContent = String(count);
+  text.setAttribute("stroke", "rgba(255,255,255,0.6)");
+  text.setAttribute("stroke-width", "1");
+  text.textContent = String(n);
   svg.appendChild(text);
 
-  // Return as AdvancedMarkerElement (required by clusterer)
   return new google.maps.marker.AdvancedMarkerElement({
     position,
     content: svg
