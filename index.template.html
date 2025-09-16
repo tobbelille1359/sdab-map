@@ -227,58 +227,63 @@
     return card;
   }
 
-  // ===== CLUSTER RENDERER (SDAB: light bg, dark border & number) =====
   function clusterRenderer({ count, position }) {
-    const n = Number.parseInt(String(count ?? "").trim(), 10);
-    const c = Number.isFinite(n) && n > 0 ? n : 1;
+  // Coerce count -> int, fallback 1
+  const n = Number.parseInt(String(count ?? "").trim(), 10);
+  const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-    let outer = 52, inner = 34, font = 16;
-    if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
-    else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
+  // Size buckets
+  let outer = 52, inner = 34, font = 16;
+  if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
+  else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
 
-    outer = Math.round(outer); inner = Math.round(inner);
+  // Safe ints & strings
+  const asInt  = (v, d=52) => (Number.isFinite(+v) && +v > 0 ? Math.round(+v) : d);
+  outer = asInt(outer, 52);
+  inner = asInt(inner, 34);
 
-    const svgNS = "http://www.w3.org/2000/svg";
-    const svg   = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);
-    svg.setAttribute("width", String(outer));
-    svg.setAttribute("height", String(outer));
+  const outerStr = String(outer);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg   = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${outerStr} ${outerStr}`);
+  svg.setAttribute("width", outerStr);
+  svg.setAttribute("height", outerStr);
 
-    const cx = outer / 2, cy = outer / 2;
-    const rOuter = Math.max(1, (outer / 2) - 1);
-    const rInner = Math.max(1, inner / 2);
+  const cx = outer / 2, cy = outer / 2;
+  const rOuter = Math.max(1, (outer / 2) - 1);
+  const rInner = Math.max(1, inner / 2);
 
-    const BG_LIGHT = "#D9E0D9", BORDER_DARK = "#0A4003", NUM_DARK = "#0A4003";
+  const BG_LIGHT = "#D9E0D9", BORDER_DARK = "#0A4003", NUM_DARK = "#0A4003";
 
-    const ring = document.createElementNS(svgNS, "circle");
-    ring.setAttribute("cx", cx); ring.setAttribute("cy", cy);
-    ring.setAttribute("r",  rOuter);
-    ring.setAttribute("fill", BG_LIGHT);
-    ring.setAttribute("stroke", BORDER_DARK);
-    ring.setAttribute("stroke-width", "1.5");
-    svg.appendChild(ring);
+  const ring = document.createElementNS(svgNS, "circle");
+  ring.setAttribute("cx", String(cx));
+  ring.setAttribute("cy", String(cy));
+  ring.setAttribute("r",  String(rOuter));
+  ring.setAttribute("fill", BG_LIGHT);
+  ring.setAttribute("stroke", BORDER_DARK);
+  ring.setAttribute("stroke-width", "1.5");
+  svg.appendChild(ring);
 
-    const innerDisk = document.createElementNS(svgNS, "circle");
-    innerDisk.setAttribute("cx", cx); innerDisk.setAttribute("cy", cy);
-    innerDisk.setAttribute("r",  rInner);
-    innerDisk.setAttribute("fill", BG_LIGHT);
-    svg.appendChild(innerDisk);
+  const innerDisk = document.createElementNS(svgNS, "circle");
+  innerDisk.setAttribute("cx", String(cx));
+  innerDisk.setAttribute("cy", String(cy));
+  innerDisk.setAttribute("r",  String(rInner));
+  innerDisk.setAttribute("fill", BG_LIGHT);
+  svg.appendChild(innerDisk);
 
-    const text = document.createElementNS(svgNS, "text");
-    text.setAttribute("x", cx); text.setAttribute("y", cy);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("dominant-baseline", "middle");
-    text.setAttribute("font-size", String(font));
-    text.setAttribute("font-weight", "800");
-    text.setAttribute("fill", NUM_DARK);
-    text.setAttribute("paint-order", "stroke");
-    text.setAttribute("stroke", "rgba(255,255,255,0.6)");
-    text.setAttribute("stroke-width", "1");
-    text.textContent = String(c);
-    svg.appendChild(text);
+  const text = document.createElementNS(svgNS, "text");
+  text.setAttribute("x", String(cx));
+  text.setAttribute("y", String(cy));
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("dominant-baseline", "middle");
+  text.setAttribute("font-size", String(font));
+  text.setAttribute("font-weight", "800");
+  text.setAttribute("fill", NUM_DARK);
+  text.textContent = String(c);
+  svg.appendChild(text);
 
-    return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
-  }
+  return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
+}
 
   // ===== Smooth zoom helper =====
   let __isZoomAnimating = false;
@@ -342,24 +347,22 @@
 
       // ===== MarkerClusterer with smooth zoom on every click =====
       const clusterer = new markerClusterer.MarkerClusterer({
-        map,
-        markers,
-        renderer: { render: clusterRenderer },
-        onClusterClick: (event) => {
-          // stoppa default (som ibland "hoppar")
-          event.preventMapDefault();
+  map,
+  markers,
+  renderer: { render: clusterRenderer },
 
-          const cluster = event.cluster;
-          const pos = cluster.position;
+  // Eget klickbeteende – ersätter default
+  onClusterClick: (ev) => {
+    // ev kan vara (event) eller (event, cluster, map) beroende på version
+    const cluster = ev?.cluster ?? ev?.[1];          // robust access
+    const pos = cluster?.position;
+    if (!pos) return;
 
-          // pan mjukt till klustrets center
-          map.panTo(pos);
-
-          // zooma in i fasta steg (2 nivåer) – justera om du vill
-          const nextZoom = Math.min(map.getZoom() + 2, 18);
-          smoothZoom(map, nextZoom);
-        }
-      });
+    map.panTo(pos);
+    const nextZoom = Math.min(map.getZoom() + 2, 18); // justera steglängd
+    smoothZoom(map, nextZoom);
+  }
+});
 
       if (markers.length > 1) {
         map.fitBounds(bounds);
