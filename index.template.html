@@ -283,14 +283,10 @@
     center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
   });
 
-  function setBadge(count, query) {
-  const badgeText = document.querySelector('#badge .badge-text');
-  if (!badgeText) return;
-
+ function setBadge(count, query) {
   const n = Number.isFinite(count) ? count : 0;
   const plural = n === 1 ? "hämtställe" : "hämtställen";
   const q = (query ?? "").trim();
-
   badgeText.textContent = q
     ? `${n} ${plural} – filtrerat på ”${q}”`
     : `${n} ${plural}`;
@@ -339,14 +335,8 @@
       google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
     }
 
-    function norm(s){
-      return String(s||"")
-        .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-        .replace(/å/gi,"a").replace(/ä/gi,"a").replace(/ö/gi,"o")
-        .toLowerCase().trim();
-    }
 
-    function applyFilter(queryRaw){
+   function applyFilter(queryRaw){
   const q = norm(queryRaw);
   const tokens = q.split(/[,\s]+/).filter(Boolean);
 
@@ -357,7 +347,10 @@
     const p = pins[i];
     const addrNorm = norm((p.address||"") + " " + (p.name||""));
     const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
+
+    // Visa eller dölj marker
     m.map = match ? map : null;
+
     if(match){
       filtered.push(m);
       const pos = parseLocationString(p.location);
@@ -365,27 +358,33 @@
     }
   });
 
-  
+  // --- Uppdatera clusterer robust ---
+  if (typeof clusterer.clearMarkers === "function") {
+    clusterer.clearMarkers();
+    if (filtered.length) clusterer.addMarkers(filtered);
+  } else {
+    clusterer = new markerClusterer.MarkerClusterer({
+      map,
+      markers: filtered,
+      renderer: { render: clusterRenderer }
+    });
+  }
+
+  // --- Uppdatera badge ---
   const displayQuery = (queryRaw ?? "").trim();
   setBadge(filtered.length, displayQuery);
+
+  // --- Kameralogik ---
+  if(filtered.length > 1){
+    map.fitBounds(fbounds);
+    google.maps.event.addListenerOnce(map,"idle",()=>{
+      if(map.getZoom()>12) map.setZoom(12);
+    });
+  } else if(filtered.length === 1){
+    map.setCenter(filtered[0].position);
+    map.setZoom(14);
+  }
 }
-
-      if (typeof clusterer.clearMarkers === "function") {
-        clusterer.clearMarkers();
-        if (filtered.length) clusterer.addMarkers(filtered);
-      } else {
-        clusterer = new markerClusterer.MarkerClusterer({ map, markers: filtered, renderer:{ render: clusterRenderer }});
-      }
-
-      setBadge(filtered.length, q ? queryRaw : "");
-      if(filtered.length>1){
-        map.fitBounds(fbounds);
-        google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
-      } else if(filtered.length===1){
-        map.setCenter(filtered[0].position); map.setZoom(14);
-      }
-    }
-
     let debounceId;
     function onInput(){ clearTimeout(debounceId); debounceId=setTimeout(()=>applyFilter(cityInput.value),180); }
     cityInput.addEventListener("input", onInput);
