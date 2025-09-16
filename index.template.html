@@ -18,11 +18,44 @@
       background: #fff; z-index: 10;
     }
     .badge {
-      position: fixed; left: 8px; bottom: 8px; z-index: 5;
-      font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: rgba(255,255,255,0.9); border: 1px solid #ddd;
-      padding: 6px 8px; border-radius: 6px;
-    }
+  position: fixed; left: 12px; bottom: 12px; z-index: 6;
+  display: flex; align-items: center; gap: 10px;
+  background: transparent; border: 0; padding: 0;
+  font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  pointer-events: none;
+}
+
+.badge .ring {
+  width: 48px; height: 48px; position: relative; border-radius: 50%;
+  background: #D9E0D9;
+  border: 2px solid #0A4003;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+
+.badge .ring img {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+
+.badge .num {
+  color: #0A4003; font-weight: 800; font-size: 14px;
+}
+
+.badge .text {
+  color: #0A4003; font-weight: 600;
+  background: rgba(255,255,255,.92);
+  border: 1px solid #E5E7EB;
+  padding: 8px 10px; border-radius: 10px;
+  pointer-events: auto;
+}
+
+.badge.filtered .text {
+  background: #D9E0D9;
+  border-color: #0A4003;
+}
 
     /* === Advanced marker "badge" with SDAB logo === */
     .sdab-pin {
@@ -298,6 +331,20 @@ function clusterRenderer({ count, position }) {
   svg.appendChild(text);
 
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
+}
+	function updateCounter(count, query){
+  const badge = document.getElementById("badge");
+  const safeQuery = query ? escapeHtml(query) : "";
+  badge.innerHTML = `
+    <div class="ring">
+      <img src="./sdab_small.png" alt="SDAB">
+      <div class="num">${count}</div>
+    </div>
+    <div class="text">
+      ${count} platser${safeQuery ? ` – filtrerat på “${safeQuery}”` : ""}
+    </div>
+  `;
+  badge.classList.toggle("filtered", !!safeQuery);
 }
 
 // ===== INIT MAP (smooth cluster zoom + sök på ort/ZIP) =====
