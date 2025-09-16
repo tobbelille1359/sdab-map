@@ -133,10 +133,37 @@
 /* Se till att ingen parent blockerar klick */
 .gm-style-iw-d { overflow: visible !important; pointer-events: auto !important; }
 
+	  /* City search UI */
+.search {
+  position: fixed; left: 12px; top: 12px; z-index: 6;
+  display: flex; gap: 6px; align-items: center;
+  background: rgba(255,255,255,.95);
+  border: 1px solid #E5E7EB; border-radius: 10px;
+  padding: 8px 10px; box-shadow: 0 4px 14px rgba(0,0,0,.06);
+  font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+.search input {
+  width: 220px; border: 0; outline: none; background: transparent;
+}
+.search button {
+  border: 0; background: #0A4003; color: #fff; padding: 6px 10px;
+  border-radius: 8px; cursor: pointer;
+}
+.search button.secondary {
+  background: #D9E0D9; color:#0A4003;
+}
+
   </style>
 </head>
 <body>
   <div class="loading" id="loading">Laddar karta…</div>
+	<div class="search">
+  <input id="cityInput" type="search" placeholder="Sök ort (t.ex. Umeå)" />
+  <button id="cityGo">Sök</button>
+  <button id="cityClear" class="secondary">Rensa</button>
+</div>
+
+<div id="map"></div>
   <div id="map"></div>
   <div class="badge" id="badge">0 platser</div>
 
@@ -374,6 +401,101 @@
       loadingEl.style.display = "none";
     }
   }
+	// --- Hjälpare: normalisera strängar (Å/Ä/Ö, case, whitespace) ---
+function norm(s) {
+  return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .replace(/å/gi, "a").replace(/ä/gi, "a").replace(/ö/gi, "o") // svenska
+    .toLowerCase().trim();
+}
+
+// --- Hjälpare: plocka ut ORT från adress "Street, ZIP, CITY" ---
+function cityFromAddress(addr) {
+  const parts = String(addr || "").split(",").map(s => s.trim());
+  // sista delen är normalt ORT; fallback om formatet avviker
+  if (parts.length >= 1) return parts[parts.length - 1];
+  return "";
+}
+
+// Behåll originaldata/markörer för reset
+const allPins = pins;
+const allMarkers = markers;
+
+// Elements
+const cityInput = document.getElementById("cityInput");
+const cityGo    = document.getElementById("cityGo");
+const cityClear = document.getElementById("cityClear");
+
+// Filtrera markörer + uppdatera clusterer
+function applyCityFilter(query) {
+  const q = norm(query);
+
+  // 1) stäng ev. öppen info-ruta
+  try { infoWindow.close(); } catch {}
+
+  // 2) dölj/visa markörer
+  const filteredMarkers = [];
+  const boundsFiltered  = new google.maps.LatLngBounds();
+
+  for (let i = 0; i < allPins.length; i++) {
+    const p = allPins[i];
+    const m = allMarkers[i];
+    const city = cityFromAddress(p.address);
+    const match = !q || norm(city).includes(q);
+
+    // AdvancedMarkerElement togglas via map: null/nuvarande map
+    m.map = match ? map : null;
+    if (match) {
+      filteredMarkers.push(m);
+      const pos = parseLocationString(p.location);
+      if (pos) boundsFiltered.extend(pos);
+    }
+  }
+
+  // 3) uppdatera klustring
+  if (typeof clusterer.clearMarkers === "function") {
+    clusterer.clearMarkers();
+    if (filteredMarkers.length) clusterer.addMarkers(filteredMarkers);
+  } else {
+    // äldre build: skapa om clusterer
+    clusterer = new markerClusterer.MarkerClusterer({ map, markers: filteredMarkers, renderer: { render: clusterRenderer }});
+  }
+
+  // 4) badge + fit
+  if (q) {
+    badgeEl.textContent = `${filteredMarkers.length} platser – filtrerat på “${query}”`;
+  } else {
+    badgeEl.textContent = `${allMarkers.length} platser`;
+  }
+
+  if (filteredMarkers.length > 1) {
+    map.fitBounds(boundsFiltered);
+    google.maps.event.addListenerOnce(map, "idle", () => {
+      if (map.getZoom() > 12) map.setZoom(12);
+    });
+  } else if (filteredMarkers.length === 1) {
+    map.setCenter(filteredMarkers[0].position);
+    map.setZoom(14);
+  }
+}
+
+// Liten debounce för input
+let tId;
+function onCityInput() {
+  clearTimeout(tId);
+  tId = setTimeout(() => applyCityFilter(cityInput.value), 180);
+}
+
+// Hook up
+cityInput.addEventListener("input", onCityInput);
+cityGo.addEventListener("click", () => applyCityFilter(cityInput.value));
+cityInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") applyCityFilter(cityInput.value);
+});
+cityClear.addEventListener("click", () => {
+  cityInput.value = "";
+  applyCityFilter("");
+});
 
   // Expose for Google Maps callback & kick off
   window.initMap = initMap;
