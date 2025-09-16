@@ -123,8 +123,15 @@
   color: #0A4003;
 }
 /* Ensure the content area allows clicks and isn't clipping */
-.gm-style-iw-d { overflow: visible !important; }
+
 .sdab-card, .sdab-close { pointer-events: auto; }
+
+/* Se till att innehållet tar emot klick */
+.gm-style-iw-d { overflow: visible !important; }
+.gm-ui-hover-effect { display: none !important; } /* vi kör vår egen knapp */
+
+/* Se till att ingen parent blockerar klick */
+.gm-style-iw-d { overflow: visible !important; pointer-events: auto !important; }
 
   </style>
 </head>
@@ -156,7 +163,34 @@
 
     // Vector map id (required for Advanced Markers). Replace with your own later.
     const MAP_ID = "DEMO_MAP_ID";
+	
+	function buildInfoCard(p, onClose) {
+  const card = document.createElement("div");
+  card.className = "sdab-card";
+  card.innerHTML = `
+    <div class="sdab-card__header">
+      <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+      <button class="sdab-close" aria-label="Stäng">×</button>
+    </div>
+    <div class="sdab-card__panel">
+      <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
+      <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
+    </div>
+  `;
 
+ const closeBtn = card.querySelector(".sdab-close");
+closeBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+
+  onClose();                         // stänger rutan
+  // defensivt: rensa innehållet ett tick senare så inget återöppnas pga layout
+  setTimeout(() => {
+    try { onClose(); } catch {}
+  }, 0);
+});
+	
     // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
     async function loadMaps() {
       const s = document.createElement('script');
@@ -312,39 +346,12 @@ function clusterRenderer({ count, position }) {
           const marker = makeAdvancedMarker(pos, p.name ?? "");
 
         marker.addListener("gmp-click", () => {
-  const closeId = "sdab-close-" + Date.now() + Math.random().toString(36).slice(2, 6);
+  const node = buildInfoCard(p, () => infoWindow.close());
 
-  const html = `
-    <div class="sdab-card">
-      <div class="sdab-card__header">
-        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
-        <button id="${closeId}" class="sdab-close" aria-label="Stäng">×</button>
-      </div>
-      <div class="sdab-card__panel">
-        <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
-        <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
-      </div>
-    </div>
-  `;
-
-  // 1) Attach domready listener BEFORE opening
-  google.maps.event.addListenerOnce(infoWindow, "domready", () => {
-    const btn = document.getElementById(closeId);
-    if (btn) {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        infoWindow.close();        // ✅ closes immediately
-      });
-    }
-  });
-
-  // 2) Now set content and open
-  infoWindow.setContent(html);
-  // (optional) anchor to the marker for better positioning
-  if (google.maps.marker && google.maps.marker.AdvancedMarkerElement &&
+  infoWindow.setContent(node);                 // DOM-node, ej HTML-string
+  if (google.maps.marker?.AdvancedMarkerElement &&
       marker instanceof google.maps.marker.AdvancedMarkerElement) {
-    infoWindow.open({ map, anchor: marker });
+    infoWindow.open({ map, anchor: marker });  // bättre placering
   } else {
     infoWindow.setPosition(pos);
     infoWindow.open({ map });
