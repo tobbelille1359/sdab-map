@@ -346,17 +346,21 @@ function clusterRenderer({ count, position }) {
           const marker = makeAdvancedMarker(pos, p.name ?? "");
 
         marker.addListener("gmp-click", () => {
+  // bygg DOM-elementet med vår helper
   const node = buildInfoCard(p, () => infoWindow.close());
 
-  infoWindow.setContent(node);                 // DOM-node, ej HTML-string
+  // stäng ev. redan öppen IW innan vi öppnar en ny
+  try { infoWindow.close(); } catch {}
+
+  infoWindow.setContent(node);
   if (google.maps.marker?.AdvancedMarkerElement &&
       marker instanceof google.maps.marker.AdvancedMarkerElement) {
-    infoWindow.open({ map, anchor: marker });  // bättre placering
+    infoWindow.open({ map, anchor: marker });
   } else {
     infoWindow.setPosition(pos);
     infoWindow.open({ map });
   }
-});
+});  // <-- OBS! viktigt att detta sista parentes + klammer finns
 
           markers.push(marker);
           bounds.extend(pos);
