@@ -147,7 +147,6 @@
   // ===== CONFIG =====
   const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
   const SDAB_LOGO_URL = "./sdab_small.png";
-
   const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
   const DEFAULT_ZOOM   = 5;
   const MAP_ID = "DEMO_MAP_ID";
@@ -178,31 +177,24 @@
     );
   }
 
-  // ===== ADVANCED MARKER (circular badge with logo) =====
+  // ===== ADVANCED MARKER (SDAB-pin) =====
   function makeAdvancedMarker(pos, title) {
     const el = document.createElement("div");
     el.className = "sdab-pin";
-    el.style.setProperty("--sdab-green", "#0A4003"); // dark border
-
+    el.style.setProperty("--sdab-green", "#0A4003");
     const img = document.createElement("img");
     img.src = SDAB_LOGO_URL;
     img.alt = "SDAB";
-    img.referrerPolicy = "no-referrer";
     img.onerror = () => {
       el.textContent = "S";
       el.style.font = "600 14px/1 system-ui";
       el.style.color = "#0A4003";
     };
     el.appendChild(img);
-
-    return new google.maps.marker.AdvancedMarkerElement({
-      position: pos,
-      title,
-      content: el
-    });
+    return new google.maps.marker.AdvancedMarkerElement({ position: pos, title, content: el });
   }
 
-  // ===== INFO CARD BUILDER (returns a DOM node) =====
+  // ===== INFO CARD =====
   function buildInfoCard(p, onClose) {
     const card = document.createElement("div");
     card.className = "sdab-card";
@@ -216,87 +208,76 @@
         <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
       </div>
     `;
-    const closeBtn = card.querySelector(".sdab-close");
-    closeBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-      onClose();
-      setTimeout(() => { try { onClose(); } catch {} }, 0);
+    card.querySelector(".sdab-close").addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation(); onClose(); setTimeout(() => { try { onClose(); } catch {} }, 0);
     });
     return card;
   }
 
-  // --- SDAB-styled HTML cluster renderer (bigger, ring + shadow) ---
-function clusterRenderer({ count, position }) {
-  // Safe count
-  const n = Number.parseInt(String(count ?? "").trim(), 10);
-  const c = Number.isFinite(n) && n > 0 ? n : 1;
+  // ===== SDAB cluster renderer (storlek per bucket) =====
+  function clusterRenderer({ count, position }) {
+    const n = Number.parseInt(String(count ?? "").trim(), 10);
+    const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-  // Fixed geometry → no viewBox errors
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", "0 0 64 64");
-  svg.setAttribute("width", "64");
-  svg.setAttribute("height", "64");
+    // mindre som default, växer för större kluster
+    let SIZE = 44, INNER = 30, FONT = 14, STROKE = 2;
+    if (c >= 25 && c < 100)      { SIZE = 52; INNER = 36; FONT = 16; }
+    else if (c >= 100 && c < 250){ SIZE = 60; INNER = 42; FONT = 18; }
+    else if (c >= 250)           { SIZE = 72; INNER = 50; FONT = 20; }
 
-  const BG_LIGHT = "#D9E0D9";
-  const BORDER_DARK = "#0A4003";
-  const NUM_DARK = "#0A4003";
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${SIZE} ${SIZE}`);
+    svg.setAttribute("width", String(SIZE));
+    svg.setAttribute("height", String(SIZE));
 
-  // Outer ring
-  const ring = document.createElementNS(svgNS, "circle");
-  ring.setAttribute("cx", "32");
-  ring.setAttribute("cy", "32");
-  ring.setAttribute("r",  "31");
-  ring.setAttribute("fill", BG_LIGHT);
-  ring.setAttribute("stroke", BORDER_DARK);
-  ring.setAttribute("stroke-width", "2");
-  svg.appendChild(ring);
+    const cx = SIZE / 2, cy = SIZE / 2;
+    const BG_LIGHT = "#D9E0D9", BORDER_DARK = "#0A4003", NUM_DARK = "#0A4003";
 
-  // Inner disk
-  const inner = document.createElementNS(svgNS, "circle");
-  inner.setAttribute("cx", "32");
-  inner.setAttribute("cy", "32");
-  inner.setAttribute("r",  "24");
-  inner.setAttribute("fill", BG_LIGHT);
-  svg.appendChild(inner);
+    const ring = document.createElementNS(svgNS, "circle");
+    ring.setAttribute("cx", String(cx));
+    ring.setAttribute("cy", String(cy));
+    ring.setAttribute("r", String((SIZE/2) - STROKE));
+    ring.setAttribute("fill", BG_LIGHT);
+    ring.setAttribute("stroke", BORDER_DARK);
+    ring.setAttribute("stroke-width", String(STROKE));
+    svg.appendChild(ring);
 
-  // Count label (size scales slightly)
-  const font = c >= 200 ? 22 : c >= 50 ? 20 : 18;
-  const text = document.createElementNS(svgNS, "text");
-  text.setAttribute("x", "32");
-  text.setAttribute("y", "34");
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("dominant-baseline", "middle");
-  text.setAttribute("font-size", String(font));
-  text.setAttribute("font-weight", "800");
-  text.setAttribute("fill", NUM_DARK);
-  text.textContent = String(c);
-  svg.appendChild(text);
+    const inner = document.createElementNS(svgNS, "circle");
+    inner.setAttribute("cx", String(cx));
+    inner.setAttribute("cy", String(cy));
+    inner.setAttribute("r", String(INNER/2));
+    inner.setAttribute("fill", BG_LIGHT);
+    svg.appendChild(inner);
 
-  return new google.maps.marker.AdvancedMarkerElement({
-    position,
-    content: svg
-  });
-}
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", String(cx));
+    text.setAttribute("y", String(cy));
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("font-size", String(FONT));
+    text.setAttribute("font-weight", "800");
+    text.setAttribute("fill", NUM_DARK);
+    text.textContent = String(c);
+    svg.appendChild(text);
 
-  // Helper för mjuk zoom
-let __isZoomAnimating = false;
-function smoothZoom(map, targetZoom) {
-  targetZoom = Math.max(1, Math.min(20, targetZoom));
-  if (__isZoomAnimating) return;
-  __isZoomAnimating = true;
+    return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
+  }
 
-  const step = () => {
-    const z = map.getZoom();
-    if (z >= targetZoom) { __isZoomAnimating = false; return; }
-    map.setZoom(z + 1);
-    google.maps.event.addListenerOnce(map, "idle", step);
-  };
-  step();
-}
-
+  // ===== Smooth zoom helper =====
+  let __isZoomAnimating = false;
+  function smoothZoom(map, targetZoom) {
+    targetZoom = Math.max(1, Math.min(20, targetZoom));
+    if (__isZoomAnimating) return;
+    __isZoomAnimating = true;
+    const step = () => {
+      const z = map.getZoom();
+      if (z >= targetZoom) { __isZoomAnimating = false; return; }
+      map.setZoom(z + 1);
+      google.maps.event.addListenerOnce(map, "idle", step);
+    };
+    step();
+  }
 
   // ===== INIT MAP =====
   async function initMap() {
@@ -324,12 +305,10 @@ function smoothZoom(map, targetZoom) {
         if (!pos) continue;
 
         const marker = makeAdvancedMarker(pos, p.name ?? "");
-
         marker.addListener("gmp-click", () => {
           try { infoWindow.close(); } catch {}
           const node = buildInfoCard(p, () => infoWindow.close());
           infoWindow.setContent(node);
-
           if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
             infoWindow.open({ map, anchor: marker });
           } else {
@@ -342,20 +321,21 @@ function smoothZoom(map, targetZoom) {
         bounds.extend(pos);
       }
 
-  // Skapa clusterer (ersätt ditt nuvarande new MarkerClusterer({...}))
-const clusterer = new markerClusterer.MarkerClusterer({
-  map,
-  markers,
-  renderer: { render: clusterRenderer }
-});
+      // === Skapa clusterer EFTER att markers finns ===
+      const clusterer = new markerClusterer.MarkerClusterer({
+        map,
+        markers,
+        renderer: { render: clusterRenderer }
+      });
 
-// Smooth pan + zoom on every cluster click
-clusterer.addListener("clusterclick", ({ cluster }) => {
-  if (!cluster || !cluster.position) return;
-  map.panTo(cluster.position);
-  const nextZoom = Math.min(map.getZoom() + 2, 18);
-  smoothZoom(map, nextZoom);
-});
+      // Stoppa default-zoom och kör alltid vår smooth pan + zoom
+      clusterer.addListener("clusterclick", (ev) => {
+        try { ev?.stop?.(); } catch {}
+        const pos = ev?.cluster?.position;
+        if (!pos) return;
+        map.panTo(pos);
+        smoothZoom(map, Math.min(map.getZoom() + 2, 18));
+      });
 
       if (markers.length > 1) {
         map.fitBounds(bounds);
