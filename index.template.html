@@ -209,17 +209,19 @@
       </div>
     `;
     card.querySelector(".sdab-close").addEventListener("click", (e) => {
-      e.preventDefault(); e.stopPropagation(); onClose(); setTimeout(() => { try { onClose(); } catch {} }, 0);
+      e.preventDefault(); e.stopPropagation();
+      onClose();
+      setTimeout(() => { try { onClose(); } catch {} }, 0);
     });
     return card;
   }
 
-  // ===== SDAB cluster renderer (storlek per bucket) =====
+  // ===== SDAB cluster renderer (storleksbuckets, fast viewBox) =====
   function clusterRenderer({ count, position }) {
     const n = Number.parseInt(String(count ?? "").trim(), 10);
     const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-    // mindre som default, växer för större kluster
+    // Mindre som standard; växer för större kluster
     let SIZE = 44, INNER = 30, FONT = 14, STROKE = 2;
     if (c >= 25 && c < 100)      { SIZE = 52; INNER = 36; FONT = 16; }
     else if (c >= 100 && c < 250){ SIZE = 60; INNER = 42; FONT = 18; }
@@ -264,48 +266,24 @@
     return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
   }
 
-  // ===== Smooth zoom helper =====
-let __zoomAnimToken = 0;
-function smoothZoom(map, targetZoom) {
-  const minZ = 1, maxZ = 20;
-  targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
+  // ===== Cancellable smooth zoom (inga hopp) =====
+  let __zoomAnimToken = 0;
+  function smoothZoom(map, targetZoom) {
+    const minZ = 1, maxZ = 20;
+    targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
 
-  const token = ++__zoomAnimToken;              // cancel previous animations
-  const stepDelay = 100;                        // ms between zoom steps
-  const step = () => {
-    if (token !== __zoomAnimToken) return;      // cancelled
-    const z = map.getZoom();
-    if (z >= targetZoom) return;                // done
-    map.setZoom(z + 1);
-    // wait a tick so the map visually updates before next step
-    setTimeout(step, stepDelay);
-  };
-  step();
-}
+    const token = ++__zoomAnimToken;     // cancels any prior animation
+    const stepDelay = 100;               // ms mellan zoomsteg (tweaka 80–140)
 
-// === Create clusterer AFTER markers exist ===
-const clusterer = new markerClusterer.MarkerClusterer({
-  map,
-  markers,
-  renderer: { render: clusterRenderer },
-
-  // This overrides the default behavior so it won't auto-zoom/fit.
-  onClusterClick: (event) => {
-    // Try to stop any native/default handling across versions
-    try { event?.stop?.(); } catch {}
-    try { event?.preventDefault?.(); } catch {}
-    try { event?.domEvent?.stopPropagation?.(); } catch {}
-    try { event?.domEvent?.preventDefault?.(); } catch {}
-
-    const pos = event?.cluster?.position;
-    if (!pos) return;
-
-    map.panTo(pos);                              // built-in pan anim
-    const nextZoom = Math.min(map.getZoom() + 2, 18);
-    smoothZoom(map, nextZoom);                   // our smooth zoom
+    const step = () => {
+      if (token !== __zoomAnimToken) return; // cancelled
+      const z = map.getZoom();
+      if (z >= targetZoom) return;           // done
+      map.setZoom(z + 1);
+      setTimeout(step, stepDelay);           // smooth progression
+    };
+    step();
   }
-});
-
 
   // ===== INIT MAP =====
   async function initMap() {
@@ -353,16 +331,23 @@ const clusterer = new markerClusterer.MarkerClusterer({
       const clusterer = new markerClusterer.MarkerClusterer({
         map,
         markers,
-        renderer: { render: clusterRenderer }
-      });
+        renderer: { render: clusterRenderer },
 
-      // Stoppa default-zoom och kör alltid vår smooth pan + zoom
-      clusterer.addListener("clusterclick", (ev) => {
-        try { ev?.stop?.(); } catch {}
-        const pos = ev?.cluster?.position;
-        if (!pos) return;
-        map.panTo(pos);
-        smoothZoom(map, Math.min(map.getZoom() + 2, 18));
+        // Override default → ingen auto-fit/zoom
+        onClusterClick: (event) => {
+          // defensivt: stoppa ev. native/default
+          try { event?.stop?.(); } catch {}
+          try { event?.preventDefault?.(); } catch {}
+          try { event?.domEvent?.stopPropagation?.(); } catch {}
+          try { event?.domEvent?.preventDefault?.(); } catch {}
+
+          const pos = event?.cluster?.position;
+          if (!pos) return;
+
+          map.panTo(pos);                                  // smooth pan
+          const nextZoom = Math.min(map.getZoom() + 2, 18);
+          smoothZoom(map, nextZoom);                       // vår smooth zoom
+        }
       });
 
       if (markers.length > 1) {
