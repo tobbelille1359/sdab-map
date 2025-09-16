@@ -328,27 +328,54 @@
       }
 
       // === Skapa clusterer EFTER att markers finns ===
-      const clusterer = new markerClusterer.MarkerClusterer({
-        map,
-        markers,
-        renderer: { render: clusterRenderer },
+const clusterer = new markerClusterer.MarkerClusterer({
+  map,
+  markers,
+  renderer: { render: clusterRenderer }
+});
 
-        // Override default → ingen auto-fit/zoom
-        onClusterClick: (event) => {
-          // defensivt: stoppa ev. native/default
-          try { event?.stop?.(); } catch {}
-          try { event?.preventDefault?.(); } catch {}
-          try { event?.domEvent?.stopPropagation?.(); } catch {}
-          try { event?.domEvent?.preventDefault?.(); } catch {}
+// --- Cancellable smooth zoom (behåll om du redan har den globalt) ---
+let __zoomAnimToken = 0;
+function smoothZoom(map, targetZoom) {
+  const minZ = 1, maxZ = 20;
+  targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
+  const token = ++__zoomAnimToken;
+  const stepDelay = 100; // tweak 80–140 ms
 
-          const pos = event?.cluster?.position;
-          if (!pos) return;
+  const step = () => {
+    if (token !== __zoomAnimToken) return; // cancelled
+    const z = map.getZoom();
+    if (z >= targetZoom) return;           // done
+    map.setZoom(z + 1);
+    setTimeout(step, stepDelay);
+  };
+  step();
+}
 
-          map.panTo(pos);                                  // smooth pan
-          const nextZoom = Math.min(map.getZoom() + 2, 18);
-          smoothZoom(map, nextZoom);                       // vår smooth zoom
-        }
-      });
+// --- Robust clusterclick-lyssnare (stöds i alla versioner) ---
+function handleClusterClick(ev) {
+  // Försök stoppa default om möjligt (annars gör det inget)
+  try { ev?.stop?.(); } catch {}
+  try { ev?.preventDefault?.(); } catch {}
+  try { ev?.domEvent?.stopPropagation?.(); } catch {}
+  try { ev?.domEvent?.preventDefault?.(); } catch {}
+
+  const cluster = ev?.cluster ?? ev?.[1]; // vissa builds skickar (event, cluster, map)
+  const pos = cluster?.position;
+  if (!pos) return;
+
+  map.panTo(pos); // smooth pan
+  const next = Math.min(map.getZoom() + 2, 18); // öka 2 nivåer (ändra till +1 om du vill långsammare)
+  smoothZoom(map, next);
+}
+
+// Primär listener-API
+clusterer.addListener?.("clusterclick", handleClusterClick);
+
+// Fallback om .addListener saknas i din build
+if (!clusterer.addListener) {
+  google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
+}
 
       if (markers.length > 1) {
         map.fitBounds(bounds);
