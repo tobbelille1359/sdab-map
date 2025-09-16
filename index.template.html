@@ -144,7 +144,7 @@
 
 	  /* City search UI */
 .search {
-  position: fixed; right: 60px; top: 10px; z-index: 6;
+  position: fixed; right: 12px; top: 60px; z-index: 6;
   display: flex; gap: 6px; align-items: center;
   background: rgba(255,255,255,.95);
   border: 1px solid #E5E7EB; border-radius: 10px;
@@ -213,20 +213,35 @@ function parseLocationString(loc){
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[s]));
 }
-// normalisera (Å/Ä/Ö, case, mellanslag)
 function norm(s){
   return String(s||"")
     .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
     .replace(/å/gi,"a").replace(/ä/gi,"a").replace(/ö/gi,"o")
     .toLowerCase().trim();
 }
-// säker numerik
 function safeCount(x, fallback=0){
   const n = Number(x);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
-/* Advanced marker med SDAB-ikon */
+/* Debug HUD (en liten röd ruta när något skriver över badgen) */
+function debugToast(msg){
+  let t = document.getElementById("__badge_toast");
+  if(!t){
+    t = document.createElement("div");
+    t.id="__badge_toast";
+    Object.assign(t.style,{
+      position:"fixed",right:"12px",bottom:"12px",zIndex:99999,
+      background:"#B00020",color:"#fff",padding:"8px 10px",
+      borderRadius:"8px",font:"12px/1.2 system-ui",boxShadow:"0 8px 20px rgba(0,0,0,.25)"
+    });
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  setTimeout(()=>{ if(t) t.remove(); }, 3500);
+}
+
+/* Advanced marker */
 function makeAdvancedMarker(pos,title){
   const el = document.createElement("div");
   el.className = "sdab-pin";
@@ -238,7 +253,7 @@ function makeAdvancedMarker(pos,title){
   return new google.maps.marker.AdvancedMarkerElement({ position:pos, title, content:el });
 }
 
-/* SDAB-klusterrenderare (stabila viewBox) */
+/* Cluster renderer */
 function clusterRenderer({ count, position }){
   const c = safeCount(count, 1);
   let SIZE=44, INNER=30, FONT=14, STROKE=2;
@@ -286,40 +301,61 @@ async function initMap(){
   const btnGo     = document.getElementById("cityGo");
   const btnClear  = document.getElementById("cityClear");
 
+  // 0) Sanity – finns elementet?
+  if(!badgeText){
+    console.error("Hittar inte .badge-text i DOM.");
+    debugToast("Fel: .badge-text saknas i DOM");
+  }
+
+  // 1) Observera *alla* ändringar på badgeText (för att hitta “någon skriver över”)
+  if (badgeText){
+    const mo = new MutationObserver((muts)=>{
+      const val = badgeText.textContent;
+      console.warn("[MutationObserver] badge-text ändrad →", `"${val}"`, muts);
+      debugToast("Badge ändrades efter skrivning (se Console)");
+    });
+    mo.observe(badgeText, { characterData:true, subtree:true, childList:true });
+  }
+
+  // 2) Central skrivfunktion för badge (loggar alltid)
+  function writeBadge(text, meta={}){
+    if(!badgeText) return;
+    badgeText.textContent = text;
+    badge.setAttribute("aria-label", text);
+    badge.dataset.lastText = text;
+    badge.dataset.meta = JSON.stringify(meta);
+    console.log("%c[Badge write]", "color:#0A4003;font-weight:700",
+      { text, meta, stack:(new Error()).stack.split("\n").slice(1,3).join(" ↩ ") });
+  }
+
   const map = new google.maps.Map(document.getElementById("map"), {
     center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
   });
 
-  // total från API, fallback i badgen
   let totalFromApi = 0;
 
-  // Robust setBadge (ALLTID siffra, suffix bara när det faktiskt finns söktext)
+  // 3) Vår enda badge-API
   function setBadge(countMaybe, queryRaw) {
     const n = safeCount(countMaybe, safeCount(totalFromApi, 0));
     const nTxt = n.toLocaleString("sv-SE");
     const plural = n === 1 ? "hämtställe" : "hämtställen";
-
-    const raw = typeof queryRaw === "string" ? queryRaw : "";
-    const qTrim = raw.trim();
+    const qTrim = String(queryRaw ?? "").trim();
     const hasQuery = qTrim.length > 0;
 
     const text = hasQuery
       ? `${nTxt} ${plural} – filtrerat på ”${qTrim}”`
       : `${nTxt} ${plural}`;
 
-    if (badgeText) {
-      badgeText.textContent = text;
-      badge.setAttribute("aria-label", text);
-    }
+    writeBadge(text, { n, plural, qTrim, hasQuery, from:"setBadge" });
   }
+  // Exponera för konsolen
+  window.__setBadge = setBadge;
 
   try{
     const data = await fetchPickupPlaces();
-
-    // total från API om finns, annars 0
     totalFromApi = safeCount(data?.results, 0);
 
-    // Tolerant pins-parsning (Pins, pins eller ren array)
+    // Tolerant pins-parsning
     const pins =
       Array.isArray(data?.Pins) ? data.Pins :
       Array.isArray(data?.pins) ? data.pins :
@@ -360,7 +396,7 @@ async function initMap(){
       map, markers, renderer: { render: clusterRenderer }
     });
 
-    // Badge: visa antal renderade markörer (fallback till data.results)
+    // Initial badge
     setBadge(markers.length, "");
 
     if(markers.length>1){
@@ -371,9 +407,9 @@ async function initMap(){
       map.setZoom(14);
     }
 
-    /* ===== FILTER ===== */
+    // Filter
     function applyFilter(queryRaw){
-      const displayQuery = String(queryRaw ?? ""); // rå text
+      const displayQuery = String(queryRaw ?? "");
       const tokens = norm(displayQuery).split(/[,\s]+/).filter(Boolean);
 
       const filtered = [];
@@ -393,7 +429,7 @@ async function initMap(){
         }
       });
 
-      // Uppdatera clusterer
+      // Cluster
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
         if (filtered.length) clusterer.addMarkers(filtered);
@@ -405,7 +441,7 @@ async function initMap(){
         });
       }
 
-      // Badge – suffix visas bara när displayQuery inte är tom efter trim
+      // Badge
       setBadge(filtered.length, displayQuery);
 
       // Kamera
@@ -430,9 +466,7 @@ async function initMap(){
 
   } catch(err){
     console.error(err);
-    // Vid fel: visa 0 hämtställen, utan suffix
-    const zero = 0;
-    setBadge(zero, "");
+    setBadge(0, ""); // på fel: visa 0 utan suffix
     alert("Kunde inte ladda kartan.");
   } finally {
     const loadingElFinal = document.getElementById("loading");
