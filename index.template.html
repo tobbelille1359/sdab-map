@@ -220,7 +220,7 @@ function parseLocationString(loc) {
 }
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, s => (
-    {"&":"&amp;","<":"&lt;","~":"~",">":"&gt;",'"':"&quot;","'":"&#39;"}[s] || s
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[s] || s
   ));
 }
 function norm(s){
@@ -284,14 +284,15 @@ function clusterRenderer({ count, position }){
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
 }
 
-/* ========= BADGE HIJACK (rendera via data-attribut) ========= */
+/* ========= BADGE VIA data-text ========= */
 (function injectBadgeStyle(){
   const css = `
-    /* Visa alltid texten från data-text, ignorera innerText */
-    #badge[data-text] { color: transparent !important; position:relative; }
+    /* Visa text från data-text */
+    #badge[data-text]{ position:relative; }
+    #badge[data-text] .badge-text{ display:none !important; } /* ⬅ döljer den gamla textnoden */
     #badge[data-text]::after{
       content: attr(data-text);
-      color: #0A4003;               /* din gröna färg */
+      color: #0A4003;
       white-space: nowrap;
     }
   `;
@@ -305,52 +306,28 @@ function clusterRenderer({ count, position }){
 async function initMap() {
   const loadingEl = document.getElementById("loading");
   const badgeEl   = document.getElementById("badge");
+  const badgeText = badgeEl?.querySelector(".badge-text");
 
-  // Om din HTML hade två #map, ta bort en (defensivt)
-  const maps = document.querySelectorAll("#map");
-  if (maps.length > 1) {
-    for (let i=1;i<maps.length;i++) maps[i].remove();
-  }
+  // Om två #map råkat ligga i DOM, ta bort dubletter
+  document.querySelectorAll("#map").forEach((el, i) => { if (i>0) el.remove(); });
 
-  // Init badge styles (chip-look är valfritt)
-  if (badgeEl) {
-    Object.assign(badgeEl.style, {
-      fontFamily: 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
-      background: '#D9E0D9',
-      border: '2px solid #0A4003',
-      borderRadius: '999px',
-      padding: '6px 12px',
-      boxShadow: '0 6px 14px rgba(0,0,0,.22)',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px'
-    });
-  }
-
-  // Vår enda badge-funktion: **sätter data-text** (inte textContent)
+  // Badge-funktion: Sätter både data-text och (fallback) .badge-text
   function setBadge(totalCount, queryRaw) {
     if (!badgeEl) return;
     const n = safeCount(totalCount, 0);
     const nTxt = n.toLocaleString("sv-SE");
-    const plural = n === 1 ? "plats" : "platser";
+    const plural = n === 1 ? "hämtställe" : "hämtställen";
     const qTrim = String(queryRaw ?? "").trim();
     const text = qTrim ? `${nTxt} ${plural} – filtrerat på ”${qTrim}”` : `${nTxt} ${plural}`;
-    badgeEl.setAttribute("data-text", text);
-    // (Behåll gärna en “skugga” med senaste skrivning för debug)
-    badgeEl.dataset.lastText = text;
-    console.log("[Badge:data-text]", { text, n, plural, qTrim });
-  }
-  // Exponera för test
-  window.__setBadge = setBadge;
 
-  // MutationObserver: logga om något fortsätter skriva över innerText
-  if (badgeEl) {
-    const mo = new MutationObserver(()=>{
-      console.warn("[Badge MO] inner text changed to:", JSON.stringify(badgeEl.textContent));
-      // men vår synliga text sitter i data-text, så UI påverkas inte
-    });
-    mo.observe(badgeEl, { characterData:true, childList:true, subtree:true });
+    // Primärt: rendera via data-text
+    badgeEl.setAttribute("data-text", text);
+    // Sekundärt (fallback): uppdatera span.badge-text om någon tittar på den
+    if (badgeText) badgeText.textContent = text;
+
+    console.log("[Badge:set]", { text, n, plural, qTrim });
   }
+  window.__setBadge = setBadge; // för manuell test
 
   // Initiera Google Map
   const map = new google.maps.Map(document.getElementById("map"), {
@@ -360,22 +337,6 @@ async function initMap() {
   const cityInput = document.getElementById("cityInput");
   const cityGo    = document.getElementById("cityGo");
   const cityClear = document.getElementById("cityClear");
-
-  let zoomToken = 0;
-  function smoothZoom(targetZoom, center) {
-    targetZoom = Math.max(1, Math.min(20, targetZoom));
-    const token = ++zoomToken;
-    const stepDelay = 120;
-    const step = () => {
-      if (token !== zoomToken) return;
-      const z = map.getZoom();
-      if (z >= targetZoom) return;
-      if (center) map.setCenter(center);
-      map.setZoom(Math.min(z + 1, targetZoom));
-      setTimeout(step, stepDelay);
-    };
-    step();
-  }
 
   try {
     console.time("[API] fetch");
@@ -427,22 +388,6 @@ async function initMap() {
       map, markers, renderer: { render: clusterRenderer }
     });
 
-    function handleClusterClick(ev) {
-      try { ev?.stop?.(); ev?.preventDefault?.(); ev?.domEvent?.stopPropagation?.(); ev?.domEvent?.preventDefault?.(); } catch {}
-      const cluster = ev?.cluster ?? ev?.[1];
-      const pos = cluster?.position; if (!pos) return;
-      map.panTo(pos);
-      google.maps.event.addListenerOnce(map, "idle", () => {
-        const next = Math.min(map.getZoom() + 2, 18);
-        smoothZoom(next, pos);
-      });
-    }
-    if (typeof clusterer.addListener === "function") {
-      clusterer.addListener("clusterclick", handleClusterClick);
-    } else {
-      google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
-    }
-
     if (markers.length > 1) {
       map.fitBounds(bounds);
       google.maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 12) map.setZoom(12); });
@@ -492,19 +437,13 @@ async function initMap() {
         if (keep && idx[i].loc) { shown.push(markers[i]); fit.extend(idx[i].loc); }
       }
 
-      if (typeof clusterer.clearMarkers === "function") {
+      if (typeof markerClusterer?.MarkerClusterer?.prototype?.clearMarkers === "function") {
         clusterer.clearMarkers();
         if (shown.length) clusterer.addMarkers(shown);
       } else {
         clusterer = new markerClusterer.MarkerClusterer({ map, markers: shown, renderer: { render: clusterRenderer } });
-        if (typeof clusterer.addListener === "function") {
-          clusterer.addListener("clusterclick", handleClusterClick);
-        } else {
-          google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
-        }
       }
 
-      // Uppdatera badge via data-text (oskadlig mot externa textContent-writes)
       setBadge(shown.length, query);
 
       if (shown.length > 1) {
@@ -527,8 +466,7 @@ async function initMap() {
 
   } catch (err) {
     console.error("[INIT ERROR]", err);
-    // På fel: visa badges via data-text så den syns ändå
-    if (badgeEl) badgeEl.setAttribute("data-text","Fel vid laddning");
+    setBadge(0, ""); // fallback
     alert("Kunde inte ladda kartan.");
   } finally {
     const l = document.getElementById("loading");
