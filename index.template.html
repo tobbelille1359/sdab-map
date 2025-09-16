@@ -172,7 +172,7 @@
   <button id="cityClear" class="secondary">Rensa</button>
 </div>
 
-<div id="map"></div>
+
   <div id="map"></div>
   <div class="badge" id="badge">
   <span class="badge-icon"><img src="./sdab_small.png" alt=""></span>
@@ -271,122 +271,123 @@
   }
 
   // ===== INIT MAP (sök + badge-fix) =====
-  async function initMap(){
-    const badge      = document.getElementById("badge");
-    const badgeText  = badge.querySelector(".badge-text");
-    const cityInput  = document.getElementById("cityInput");
-    const btnGo      = document.getElementById("cityGo");
-    const btnClear   = document.getElementById("cityClear");
+ async function initMap(){
+  const loadingEl = document.getElementById("loading");
+  const badge      = document.getElementById("badge");
+  const badgeText  = badge.querySelector(".badge-text");
+  const cityInput  = document.getElementById("cityInput");
+  const btnGo      = document.getElementById("cityGo");
+  const btnClear   = document.getElementById("cityClear");
 
-    const map = new google.maps.Map(document.getElementById("map"), {
-      center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
+  const map = new google.maps.Map(document.getElementById("map"), {
+    center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
+  });
+
+  function setBadge(count, query){
+    const plural = count===1 ? "hämtställe" : "hämtställen";
+    badgeText.textContent = query ? `${count} ${plural} – filtrerat på ”${query}”` : `${count} ${plural}`;
+  }
+
+  try{
+    const data = await fetchPickupPlaces();
+    const pins = Array.isArray(data?.Pins) ? data.Pins : [];
+    const markers = [];
+    const bounds = new google.maps.LatLngBounds();
+    const infoWindow = new google.maps.InfoWindow();
+
+    for(const p of pins){
+      const pos = parseLocationString(p.location);
+      if(!pos) continue;
+      const m = makeAdvancedMarker(pos, p.name ?? "");
+      m.addListener("gmp-click", () => {
+        try{ infoWindow.close(); }catch{}
+        const card=document.createElement("div");
+        card.className="sdab-card";
+        card.innerHTML = `
+          <div class="sdab-card__header">
+            <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+            <button class="sdab-close" aria-label="Stäng">×</button>
+          </div>
+          <div class="sdab-card__panel">
+            <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
+            <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
+          </div>`;
+        card.querySelector(".sdab-close").addEventListener("click",(e)=>{ e.preventDefault(); e.stopPropagation(); infoWindow.close(); });
+        infoWindow.setContent(card);
+        infoWindow.open({ map, anchor: m });
+      });
+      markers.push(m);
+      bounds.extend(pos);
+    }
+
+    let clusterer = new markerClusterer.MarkerClusterer({
+      map, markers, renderer: { render: clusterRenderer }
     });
 
-    // uppdatera pillret
-    function setBadge(count, query){
-      const plural = count===1 ? "hämtställe" : "hämtställen";
-      const text = query ? `${count} ${plural} – filtrerat på ”${query}”` : `${count} ${plural}`;
-      badgeText.textContent = text;
+    setBadge(markers.length, "");
+
+    if(markers.length>1){
+      map.fitBounds(bounds);
+      google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
     }
 
-    try{
-      const data = await fetchPickupPlaces();
-      const pins = Array.isArray(data?.Pins) ? data.Pins : [];
-      const markers = [];
-      const bounds = new google.maps.LatLngBounds();
-      const infoWindow = new google.maps.InfoWindow();
+    function norm(s){
+      return String(s||"")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+        .replace(/å/gi,"a").replace(/ä/gi,"a").replace(/ö/gi,"o")
+        .toLowerCase().trim();
+    }
 
-      // skapa markers
-      for(const p of pins){
-        const pos = parseLocationString(p.location);
-        if(!pos) continue;
-        const m = makeAdvancedMarker(pos, p.name ?? "");
-        m.addListener("gmp-click", () => {
-          try{ infoWindow.close(); }catch{}
-          const card=document.createElement("div");
-          card.className="sdab-card";
-          card.innerHTML = `
-            <div class="sdab-card__header">
-              <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
-              <button class="sdab-close" aria-label="Stäng">×</button>
-            </div>
-            <div class="sdab-card__panel">
-              <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
-              <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
-            </div>`;
-          card.querySelector(".sdab-close").addEventListener("click",(e)=>{ e.preventDefault(); e.stopPropagation(); infoWindow.close(); });
-          infoWindow.setContent(card);
-          infoWindow.open({ map, anchor: m });
-        });
-        markers.push(m);
-        bounds.extend(pos);
-      }
+    function applyFilter(queryRaw){
+      const q = norm(queryRaw);
+      const tokens = q.split(/[,\s]+/).filter(Boolean);
 
-      // clusterer
-      let clusterer = new markerClusterer.MarkerClusterer({
-        map, markers, renderer: { render: clusterRenderer }
+      const filtered = [];
+      const fbounds = new google.maps.LatLngBounds();
+
+      markers.forEach((m,i)=>{
+        const p = pins[i];
+        const addrNorm = norm((p.address||"") + " " + (p.name||""));
+        const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
+        m.map = match ? map : null;
+        if(match){
+          filtered.push(m);
+          const pos = parseLocationString(p.location);
+          if(pos) fbounds.extend(pos);
+        }
       });
 
-      // badge initialt
-      setBadge(markers.length, "");
+      if (typeof clusterer.clearMarkers === "function") {
+        clusterer.clearMarkers();
+        if (filtered.length) clusterer.addMarkers(filtered);
+      } else {
+        clusterer = new markerClusterer.MarkerClusterer({ map, markers: filtered, renderer:{ render: clusterRenderer }});
+      }
 
-      // fit bounds initialt
-      if(markers.length>1){
-        map.fitBounds(bounds);
+      setBadge(filtered.length, q ? queryRaw : "");
+      if(filtered.length>1){
+        map.fitBounds(fbounds);
         google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
+      } else if(filtered.length===1){
+        map.setCenter(filtered[0].position); map.setZoom(14);
       }
-
-      // ------- SÖK / FILTER -------
-      function applyFilter(queryRaw){
-        const q = norm(queryRaw);
-        const tokens = q.split(/[,\s]+/).filter(Boolean); // stöd "167 66 bromma", "bromma", "16766", etc.
-
-        // filtrera
-        const filtered = [];
-        const fbounds = new google.maps.LatLngBounds();
-        markers.forEach((m,i)=>{
-          const p = pins[i];
-          const addrNorm = norm((p.address||"") + " " + (p.name||""));
-          const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
-          m.map = match ? map : null;
-          if(match){
-            filtered.push(m);
-            const pos = parseLocationString(p.location);
-            if(pos) fbounds.extend(pos);
-          }
-        });
-
-        // uppdatera clusterer robust
-        if (typeof clusterer.clearMarkers === "function") {
-          clusterer.clearMarkers();
-          if (filtered.length) clusterer.addMarkers(filtered);
-        } else {
-          clusterer = new markerClusterer.MarkerClusterer({ map, markers: filtered, renderer:{ render: clusterRenderer }});
-        }
-
-        // badge + kamera
-        setBadge(filtered.length, q ? queryRaw : "");
-        if(filtered.length>1){
-          map.fitBounds(fbounds);
-          google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
-        } else if(filtered.length===1){
-          map.setCenter(filtered[0].position); map.setZoom(14);
-        }
-      }
-
-      // wire-up UI
-      let debounceId;
-      function onInput(){ clearTimeout(debounceId); debounceId=setTimeout(()=>applyFilter(cityInput.value),180); }
-      cityInput.addEventListener("input", onInput);
-      cityInput.addEventListener("keydown", e=>{ if(e.key==="Enter") applyFilter(cityInput.value); });
-      btnGo?.addEventListener("click", ()=>applyFilter(cityInput.value));
-      btnClear?.addEventListener("click", ()=>{ cityInput.value=""; applyFilter(""); });
-
-    }catch(err){
-      console.error(err);
-      alert("Kunde inte ladda kartan.");
     }
+
+    let debounceId;
+    function onInput(){ clearTimeout(debounceId); debounceId=setTimeout(()=>applyFilter(cityInput.value),180); }
+    cityInput.addEventListener("input", onInput);
+    cityInput.addEventListener("keydown", e=>{ if(e.key==="Enter") applyFilter(cityInput.value); });
+    btnGo?.addEventListener("click", ()=>applyFilter(cityInput.value));
+    btnClear?.addEventListener("click", ()=>{ cityInput.value=""; applyFilter(""); });
+
+  } catch(err){
+    console.error(err);
+    alert("Kunde inte ladda kartan.");
+  } finally {
+    // Dölj “Laddar karta…”
+    if (loadingEl) loadingEl.style.display = "none";
   }
+}
 
   // boot
   window.initMap = initMap;
