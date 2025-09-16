@@ -277,23 +277,7 @@ function clusterRenderer({ count, position }){
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
 }
 
-/* ========= BADGE VIA data-text ========= */
-(function injectBadgeStyle(){
-  const css = `
-    /* Visa text från data-text */
-    #badge[data-text]{ position:relative; }
-    #badge[data-text] .badge-text{ display:none !important; } /* ⬅ döljer den gamla textnoden */
-    #badge[data-text]::after{
-      content: attr(data-text);
-      color: #0A4003;
-      white-space: nowrap;
-    }
-  `;
-  const style = document.createElement("style");
-  style.id = "badge-attr-style";
-  style.textContent = css;
-  document.head.appendChild(style);
-})();
+
 
 /* ========= INIT MAP ========= */
 async function initMap() {
