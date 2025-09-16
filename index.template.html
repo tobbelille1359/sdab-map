@@ -194,8 +194,8 @@ async function fetchPickupPlaces(){
 }
 function parseLocationString(loc){
   if(!loc) return null;
-  const [lat,lng] = String(loc).split(",").map(Number);
-  return (Number.isNaN(lat)||Number.isNaN(lng)) ? null : {lat,lng};
+  const [lat,lng]=String(loc).split(",").map(Number);
+  return (Number.isNaN(lat)||Number.isNaN(lng))?null:{lat,lng};
 }
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[s]));
@@ -226,7 +226,10 @@ function makeAdvancedMarker(pos,title){
   img.src=SDAB_LOGO_URL; img.alt="SDAB";
   img.onerror=()=>{ el.textContent="S"; el.style.font="600 14px/1 system-ui"; el.style.color="#0A4003"; };
   el.appendChild(img);
-  return new google.maps.marker.AdvancedMarkerElement({ position:pos, title, content:el });
+  return new google.maps.marker.AdvancedMarkerElement({
+    position:pos, title, content:el,
+    collisionBehavior: google.maps.CollisionBehavior.REQUIRED_AND_HIDES_OPTIONAL
+  });
 }
 
 /* ==== INFO CARD ==== */
@@ -249,13 +252,12 @@ function buildInfoCard(p,onClose){
 /* ==== SDAB KLUSTER-RENDER (GRÖNA CIRKLAR) ==== */
 function clusterRenderer({ count, position }){
   const c = Number.isFinite(+count) && +count>0 ? +count : 1;
-
   let SIZE=44, INNER=30, FONT=14, STROKE=2;
   if(c>=25 && c<100){ SIZE=52; INNER=36; FONT=16; }
   else if(c>=100 && c<250){ SIZE=60; INNER=42; FONT=18; }
   else if(c>=250){ SIZE=72; INNER=50; FONT=20; }
 
-  const NS="http://www.w3.org/200/svg".replace("/0/","/2000/"); // defensiv
+  const NS="http://www.w3.org/2000/svg";
   const svg=document.createElementNS(NS,"svg");
   svg.setAttribute("viewBox",`0 0 ${SIZE} ${SIZE}`);
   svg.setAttribute("width",String(SIZE));
@@ -281,7 +283,8 @@ function clusterRenderer({ count, position }){
   t.setAttribute("x",cx); t.setAttribute("y",cy);
   t.setAttribute("text-anchor","middle"); t.setAttribute("dominant-baseline","middle");
   t.setAttribute("font-size",String(FONT)); t.setAttribute("font-weight","800"); t.setAttribute("fill",NUM);
-  t.textContent=String(c); svg.appendChild(t);
+  t.textContent=String(c);
+  svg.appendChild(t);
 
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
 }
@@ -311,7 +314,7 @@ async function initMap(){
     const data = await fetchPickupPlaces();
     pins = Array.isArray(data?.Pins) ? data.Pins : (Array.isArray(data) ? data : []);
 
-    // Bygg markers
+    // Bygg markers (OBS: sätt INTE m.map här - låt clusterer sköta det)
     const bounds = new google.maps.LatLngBounds();
     markers = [];
     for(const p of pins){
@@ -327,9 +330,12 @@ async function initMap(){
       bounds.extend(pos);
     }
 
-    // SDAB-kluster (inte Google default)
+    // SDAB-kluster (äger visningen av markers)
     clusterer = new markerClusterer.MarkerClusterer({
-      map, markers, renderer: { render: clusterRenderer }
+      map,
+      markers,
+      renderer: { render: clusterRenderer }
+      // , algorithm: new markerClusterer.SuperClusterAlgorithm({ maxZoom: 14 }) // kan användas om du vill
     });
 
     // INIT badge
@@ -343,7 +349,7 @@ async function initMap(){
       map.setCenter(markers[0].position); map.setZoom(14);
     }
 
-    // ====== FILTER ======
+    /* ===== FILTER ===== */
     function normAddr(p){
       return norm(`${p?.address||""} ${p?.name||""}`);
     }
@@ -352,20 +358,22 @@ async function initMap(){
 
       try{ infoWindow.close(); }catch{}
 
-      const shown=[]; const fit=new google.maps.LatLngBounds();
-      markers.forEach((m,i)=>{
+      // Bestäm vilka markers som ska visas (via clusterer)
+      const shown = [];
+      const fit = new google.maps.LatLngBounds();
+
+      for(let i=0;i<markers.length;i++){
         const p = pins[i];
         const hay = normAddr(p);
         const keep = tokens.length===0 || tokens.every(t=>hay.includes(t));
-        m.map = keep ? map : null;
         if(keep){
-          shown.push(m);
-          const pos=parseLocationString(p.location);
+          shown.push(markers[i]);
+          const pos = parseLocationString(p.location);
           if(pos) fit.extend(pos);
         }
-      });
+      }
 
-      // uppdatera kluster med de synliga markörerna
+      // Uppdatera enbart clustererns lista (rör inte m.map)
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
         if (shown.length) clusterer.addMarkers(shown);
@@ -373,10 +381,10 @@ async function initMap(){
         clusterer = new markerClusterer.MarkerClusterer({ map, markers: shown, renderer: { render: clusterRenderer } });
       }
 
-      // Endast "XX hämtställen"
+      // Badge
       setBadge(shown.length);
 
-      // kamera
+      // Kamera
       if(shown.length>1){
         map.fitBounds(fit);
         google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
@@ -393,7 +401,7 @@ async function initMap(){
     cityGo?.addEventListener("click", ()=>applyFilter(cityInput.value));
     cityClear?.addEventListener("click", ()=>{ cityInput.value=""; applyFilter(""); });
 
-    // Manuell test
+    // Manuell badge-test
     window.__setBadge = setBadge;
 
   }catch(err){
