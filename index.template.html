@@ -228,78 +228,60 @@
   }
 
   function clusterRenderer({ count, position }) {
-  // Coerce count -> int, fallback 1
+  // Coerce siffra
   const n = Number.parseInt(String(count ?? "").trim(), 10);
   const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-  // Size buckets
-  let outer = 52, inner = 34, font = 16;
-  if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
-  else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
+  // Storlekar
+  let size = 52, font = 16, border = 2;
+  if (c >= 50 && c < 200) { size = 60; font = 18; }
+  else if (c >= 200)      { size = 70; font = 20; }
 
-  // Safe ints & strings
-  const asInt  = (v, d=52) => (Number.isFinite(+v) && +v > 0 ? Math.round(+v) : d);
-  outer = asInt(outer, 52);
-  inner = asInt(inner, 34);
+  // SDAB-färger
+  const BG_LIGHT = "#D9E0D9";
+  const BORDER_DARK = "#0A4003";
+  const NUM_DARK = "#0A4003";
 
-  const outerStr = String(outer);
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg   = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${outerStr} ${outerStr}`);
-  svg.setAttribute("width", outerStr);
-  svg.setAttribute("height", outerStr);
+  // Bygg HTML-badge
+  const el = document.createElement("div");
+  el.style.width = `${size}px`;
+  el.style.height = `${size}px`;
+  el.style.borderRadius = "50%";
+  el.style.background = BG_LIGHT;
+  el.style.border = `${border}px solid ${BORDER_DARK}`;
+  el.style.boxShadow = "0 2px 8px rgba(0,0,0,.25)";
+  el.style.display = "grid";
+  el.style.placeItems = "center";
+  el.style.userSelect = "none";
 
-  const cx = outer / 2, cy = outer / 2;
-  const rOuter = Math.max(1, (outer / 2) - 1);
-  const rInner = Math.max(1, inner / 2);
+  const label = document.createElement("div");
+  label.textContent = String(c);
+  label.style.font = `800 ${font}px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+  label.style.color = NUM_DARK;
+  el.appendChild(label);
 
-  const BG_LIGHT = "#D9E0D9", BORDER_DARK = "#0A4003", NUM_DARK = "#0A4003";
-
-  const ring = document.createElementNS(svgNS, "circle");
-  ring.setAttribute("cx", String(cx));
-  ring.setAttribute("cy", String(cy));
-  ring.setAttribute("r",  String(rOuter));
-  ring.setAttribute("fill", BG_LIGHT);
-  ring.setAttribute("stroke", BORDER_DARK);
-  ring.setAttribute("stroke-width", "1.5");
-  svg.appendChild(ring);
-
-  const innerDisk = document.createElementNS(svgNS, "circle");
-  innerDisk.setAttribute("cx", String(cx));
-  innerDisk.setAttribute("cy", String(cy));
-  innerDisk.setAttribute("r",  String(rInner));
-  innerDisk.setAttribute("fill", BG_LIGHT);
-  svg.appendChild(innerDisk);
-
-  const text = document.createElementNS(svgNS, "text");
-  text.setAttribute("x", String(cx));
-  text.setAttribute("y", String(cy));
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("dominant-baseline", "middle");
-  text.setAttribute("font-size", String(font));
-  text.setAttribute("font-weight", "800");
-  text.setAttribute("fill", NUM_DARK);
-  text.textContent = String(c);
-  svg.appendChild(text);
-
-  return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
+  return new google.maps.marker.AdvancedMarkerElement({
+    position,
+    content: el
+  });
 }
 
-  // ===== Smooth zoom helper =====
-  let __isZoomAnimating = false;
-  function smoothZoom(map, targetZoom) {
-    targetZoom = Math.max(1, Math.min(20, targetZoom));
-    if (__isZoomAnimating) return;
-    __isZoomAnimating = true;
+  // Helper för mjuk zoom
+let __isZoomAnimating = false;
+function smoothZoom(map, targetZoom) {
+  targetZoom = Math.max(1, Math.min(20, targetZoom));
+  if (__isZoomAnimating) return;
+  __isZoomAnimating = true;
 
-    const step = () => {
-      const z = map.getZoom();
-      if (z >= targetZoom) { __isZoomAnimating = false; return; }
-      map.setZoom(z + 1);
-      google.maps.event.addListenerOnce(map, "idle", step);
-    };
-    step();
-  }
+  const step = () => {
+    const z = map.getZoom();
+    if (z >= targetZoom) { __isZoomAnimating = false; return; }
+    map.setZoom(z + 1);
+    google.maps.event.addListenerOnce(map, "idle", step);
+  };
+  step();
+}
+
 
   // ===== INIT MAP =====
   async function initMap() {
@@ -345,24 +327,29 @@
         bounds.extend(pos);
       }
 
-      // ===== MarkerClusterer with smooth zoom on every click =====
-      const clusterer = new markerClusterer.MarkerClusterer({
+  // Skapa clusterer (ersätt ditt nuvarande new MarkerClusterer({...}))
+const clusterer = new markerClusterer.MarkerClusterer({
   map,
   markers,
   renderer: { render: clusterRenderer },
 
-  // Eget klickbeteende – ersätter default
-  onClusterClick: (ev) => {
-    // ev kan vara (event) eller (event, cluster, map) beroende på version
-    const cluster = ev?.cluster ?? ev?.[1];          // robust access
-    const pos = cluster?.position;
+  // OBS: signaturen i din version är (event, cluster, map)
+  onClusterClick: (event, cluster, mapInstance) => {
+    // Kör vår egen pan + smooth zoom (vi låter default vara, men
+    // vår animering sker direkt och ger mjuk känsla).
+    const pos = cluster && cluster.position;
     if (!pos) return;
 
     map.panTo(pos);
-    const nextZoom = Math.min(map.getZoom() + 2, 18); // justera steglängd
+    const nextZoom = Math.min(map.getZoom() + 2, 18); // hur mycket per klick
     smoothZoom(map, nextZoom);
+
+    // Om din version *också* auto-zoomar och det känns dubbelextra:
+    // kommentera in raderna nedan för att försöka stoppa default.
+    // if (event && typeof event.stop === "function") event.stop();
+    // if (event && typeof event.preventDefault === "function") event.preventDefault();
   }
-});
+  });
 
       if (markers.length > 1) {
         map.fitBounds(bounds);
