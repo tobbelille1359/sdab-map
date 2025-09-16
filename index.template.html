@@ -266,171 +266,100 @@
     return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
   }
 
-  // ===== Cancellable smooth zoom (inga hopp) =====
-  let __zoomAnimToken = 0;
-  function smoothZoom(map, targetZoom) {
-    const minZ = 1, maxZ = 20;
-    targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
+  // ===== INIT MAP (med smooth cluster-zoom) =====
+  async function initMap() {
+    const badgeEl   = document.getElementById("badge");
+    const loadingEl = document.getElementById("loading");
 
-    const token = ++__zoomAnimToken;     // cancels any prior animation
-    const stepDelay = 100;               // ms mellan zoomsteg (tweaka 80–140)
-
-    const step = () => {
-      if (token !== __zoomAnimToken) return; // cancelled
-      const z = map.getZoom();
-      if (z >= targetZoom) return;           // done
-      map.setZoom(z + 1);
-      setTimeout(step, stepDelay);           // smooth progression
-    };
-    step();
-  }
-
-  // Full, self-contained initMap with smooth cluster click
-async function initMap() {
-  const badgeEl   = document.getElementById("badge");
-  const loadingEl = document.getElementById("loading");
-
-  const map = new google.maps.Map(document.getElementById("map"), {
-    center: DEFAULT_CENTER,
-    zoom: DEFAULT_ZOOM,
-    mapTypeControl: true,
-    mapId: MAP_ID
-  });
-
-  // Cancellable, center-locked smooth zoom (local to this map)
-  let zoomToken = 0;
-  function smoothZoom(targetZoom, center) {
-    const minZ = 1, maxZ = 20;
-    targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
-
-    const token = ++zoomToken;       // cancels any previous animation
-    const stepDelay = 120;           // ms between steps (tweak 100–140)
-    const stepSize  = 1;             // zoom increment per step
-
-    const step = () => {
-      if (token !== zoomToken) return;       // cancelled
-      const z = map.getZoom();
-      if (z >= targetZoom) return;           // done
-
-      if (center) map.setCenter(center);     // keep center locked to cluster
-      map.setZoom(Math.min(z + stepSize, targetZoom));
-
-      setTimeout(step, stepDelay);
-    };
-    step();
-  }
-
-  try {
-    const data = await fetchPickupPlaces();
-    const pins = Array.isArray(data?.Pins) ? data.Pins : [];
-    badgeEl.textContent = `${pins.length} platser`;
-
-    const markers = [];
-    const bounds = new google.maps.LatLngBounds();
-    const infoWindow = new google.maps.InfoWindow();
-
-    for (const p of pins) {
-      const pos = parseLocationString(p.location);
-      if (!pos) continue;
-
-      const marker = makeAdvancedMarker(pos, p.name ?? "");
-
-      // Snygg info-ruta på klick (Advanced Marker)
-      marker.addListener("gmp-click", () => {
-        try { infoWindow.close(); } catch {}
-        const node = buildInfoCard(p, () => infoWindow.close());
-        infoWindow.setContent(node);
-
-        if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
-          infoWindow.open({ map, anchor: marker });
-        } else {
-          infoWindow.setPosition(pos);
-          infoWindow.open({ map });
-        }
-      });
-
-      markers.push(marker);
-      bounds.extend(pos);
-    }
-
-    // Skapa clusterer EFTER att markers finns
-    const clusterer = new markerClusterer.MarkerClusterer({
-      map,
-      markers,
-      renderer: { render: clusterRenderer }
+    const map = new google.maps.Map(document.getElementById("map"), {
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      mapTypeControl: true,
+      mapId: MAP_ID
     });
 
-    // Robust kluster-klick: pan mjukt, vänta tills pan är klar, zooma i ettor
-    function handleClusterClick(ev) {
-      // Stoppa default om möjligt (olika builds hanterar detta olika)
-      try { ev?.stop?.(); } catch {}
-      try { ev?.preventDefault?.(); } catch {}
-      try { ev?.domEvent?.stopPropagation?.(); } catch {}
-      try { ev?.domEvent?.preventDefault?.(); } catch {}
+    // Cancellable, center-locked smooth zoom (lokal till denna karta)
+    let zoomToken = 0;
+    function smoothZoom(targetZoom, center) {
+      const minZ = 1, maxZ = 20;
+      targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
+      const token = ++zoomToken;
+      const stepDelay = 120;   // 100–140 ger mjuk känsla
+      const stepSize  = 1;
+      const step = () => {
+        if (token !== zoomToken) return;
+        const z = map.getZoom();
+        if (z >= targetZoom) return;
+        if (center) map.setCenter(center);          // lås center till klustret
+        map.setZoom(Math.min(z + stepSize, targetZoom));
+        setTimeout(step, stepDelay);
+      };
+      step();
+    }
 
-      // Vissa versioner skickar (event, cluster, map) → plocka robust
-      const cluster = ev?.cluster ?? ev?.[1];
-      const pos = cluster?.position;
-      if (!pos) return;
+    try {
+      const data = await fetchPickupPlaces();
+      const pins = Array.isArray(data?.Pins) ? data.Pins : [];
+      badgeEl.textContent = `${pins.length} platser`;
 
-      // 1) Panorera mjukt till klustrets center
-      map.panTo(pos);
+      const markers = [];
+      const bounds = new google.maps.LatLngBounds();
+      const infoWindow = new google.maps.InfoWindow();
 
-      // 2) När pan är klar (idle), zooma stegvis och lås center
-      google.maps.event.addListenerOnce(map, "idle", () => {
-        const next = Math.min(map.getZoom() + 2, 18); // ändra +1 för ännu mjukare
-        smoothZoom(next, pos);
+      for (const p of pins) {
+        const pos = parseLocationString(p.location);
+        if (!pos) continue;
+
+        const marker = makeAdvancedMarker(pos, p.name ?? "");
+        marker.addListener("gmp-click", () => {
+          try { infoWindow.close(); } catch {}
+          const node = buildInfoCard(p, () => infoWindow.close());
+          infoWindow.setContent(node);
+          if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
+            infoWindow.open({ map, anchor: marker });
+          } else {
+            infoWindow.setPosition(pos);
+            infoWindow.open({ map });
+          }
+        });
+
+        markers.push(marker);
+        bounds.extend(pos);
+      }
+
+      // Skapa clusterer EFTER markers
+      const clusterer = new markerClusterer.MarkerClusterer({
+        map,
+        markers,
+        renderer: { render: clusterRenderer }
       });
-    }
 
-    // Koppla lyssnare (stöd båda API-varianterna)
-    if (typeof clusterer.addListener === "function") {
-      clusterer.addListener("clusterclick", handleClusterClick);
-    } else {
-      google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
-    }
+      // Robust kluster-klick: stoppa default, pan → idle → smooth zoom
+      function handleClusterClick(ev) {
+        try { ev?.stop?.(); } catch {}
+        try { ev?.preventDefault?.(); } catch {}
+        try { ev?.domEvent?.stopPropagation?.(); } catch {}
+        try { ev?.domEvent?.preventDefault?.(); } catch {}
 
-    // Fit bounds initialt, men begränsa maxzoom
-    if (markers.length > 1) {
-      map.fitBounds(bounds);
-      google.maps.event.addListenerOnce(map, "idle", () => {
-        if (map.getZoom() > 12) map.setZoom(12);
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    badgeEl.textContent = "Fel vid laddning";
-    alert("Kunde inte ladda kartan.");
-  } finally {
-    loadingEl.style.display = "none";
-  }
-}
+        const cluster = ev?.cluster ?? ev?.[1];
+        const pos = cluster?.position;
+        if (!pos) return;
 
-// --- Robust clusterclick-lyssnare (stöds i alla versioner) ---
-function handleClusterClick(ev) {
-  // Försök stoppa default om möjligt (annars gör det inget)
-  try { ev?.stop?.(); } catch {}
-  try { ev?.preventDefault?.(); } catch {}
-  try { ev?.domEvent?.stopPropagation?.(); } catch {}
-  try { ev?.domEvent?.preventDefault?.(); } catch {}
+        map.panTo(pos);
+        google.maps.event.addListenerOnce(map, "idle", () => {
+          const next = Math.min(map.getZoom() + 2, 18);  // ändra till +1 för ännu mjukare
+          smoothZoom(next, pos);
+        });
+      }
 
-  const cluster = ev?.cluster ?? ev?.[1]; // vissa builds skickar (event, cluster, map)
-  const pos = cluster?.position;
-  if (!pos) return;
+      // Koppla lyssnaren exakt en gång
+      if (typeof clusterer.addListener === "function") {
+        clusterer.addListener("clusterclick", handleClusterClick);
+      } else {
+        google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
+      }
 
-  map.panTo(pos); // smooth pan
-  const next = Math.min(map.getZoom() + 2, 18); // öka 2 nivåer (ändra till +1 om du vill långsammare)
-  smoothZoom(map, next);
-}
-
-// Primär listener-API
-clusterer.addListener?.("clusterclick", handleClusterClick);
-
-// Fallback om .addListener saknas i din build
-if (!clusterer.addListener) {
-  google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick);
-}
-
+      // Fit bounds initialt, men begränsa maxzoom
       if (markers.length > 1) {
         map.fitBounds(bounds);
         google.maps.event.addListenerOnce(map, "idle", () => {
