@@ -283,10 +283,18 @@
     center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
   });
 
-  function setBadge(count, query){
-    const plural = count===1 ? "hämtställe" : "hämtställen";
-    badgeText.textContent = query ? `${count} ${plural} – filtrerat på ”${query}”` : `${count} ${plural}`;
-  }
+  function setBadge(count, query) {
+  const badgeText = document.querySelector('#badge .badge-text');
+  if (!badgeText) return;
+
+  const n = Number.isFinite(count) ? count : 0;
+  const plural = n === 1 ? "hämtställe" : "hämtställen";
+  const q = (query ?? "").trim();
+
+  badgeText.textContent = q
+    ? `${n} ${plural} – filtrerat på ”${q}”`
+    : `${n} ${plural}`;
+}
 
   try{
     const data = await fetchPickupPlaces();
@@ -339,23 +347,28 @@
     }
 
     function applyFilter(queryRaw){
-      const q = norm(queryRaw);
-      const tokens = q.split(/[,\s]+/).filter(Boolean);
+  const q = norm(queryRaw);
+  const tokens = q.split(/[,\s]+/).filter(Boolean);
 
-      const filtered = [];
-      const fbounds = new google.maps.LatLngBounds();
+  const filtered = [];
+  const fbounds = new google.maps.LatLngBounds();
 
-      markers.forEach((m,i)=>{
-        const p = pins[i];
-        const addrNorm = norm((p.address||"") + " " + (p.name||""));
-        const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
-        m.map = match ? map : null;
-        if(match){
-          filtered.push(m);
-          const pos = parseLocationString(p.location);
-          if(pos) fbounds.extend(pos);
-        }
-      });
+  markers.forEach((m,i)=>{
+    const p = pins[i];
+    const addrNorm = norm((p.address||"") + " " + (p.name||""));
+    const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
+    m.map = match ? map : null;
+    if(match){
+      filtered.push(m);
+      const pos = parseLocationString(p.location);
+      if(pos) fbounds.extend(pos);
+    }
+  });
+
+  
+  const displayQuery = (queryRaw ?? "").trim();
+  setBadge(filtered.length, displayQuery);
+}
 
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
