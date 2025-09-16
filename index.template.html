@@ -265,19 +265,47 @@
   }
 
   // ===== Smooth zoom helper =====
-  let __isZoomAnimating = false;
-  function smoothZoom(map, targetZoom) {
-    targetZoom = Math.max(1, Math.min(20, targetZoom));
-    if (__isZoomAnimating) return;
-    __isZoomAnimating = true;
-    const step = () => {
-      const z = map.getZoom();
-      if (z >= targetZoom) { __isZoomAnimating = false; return; }
-      map.setZoom(z + 1);
-      google.maps.event.addListenerOnce(map, "idle", step);
-    };
-    step();
+let __zoomAnimToken = 0;
+function smoothZoom(map, targetZoom) {
+  const minZ = 1, maxZ = 20;
+  targetZoom = Math.max(minZ, Math.min(maxZ, targetZoom));
+
+  const token = ++__zoomAnimToken;              // cancel previous animations
+  const stepDelay = 100;                        // ms between zoom steps
+  const step = () => {
+    if (token !== __zoomAnimToken) return;      // cancelled
+    const z = map.getZoom();
+    if (z >= targetZoom) return;                // done
+    map.setZoom(z + 1);
+    // wait a tick so the map visually updates before next step
+    setTimeout(step, stepDelay);
+  };
+  step();
+}
+
+// === Create clusterer AFTER markers exist ===
+const clusterer = new markerClusterer.MarkerClusterer({
+  map,
+  markers,
+  renderer: { render: clusterRenderer },
+
+  // This overrides the default behavior so it won't auto-zoom/fit.
+  onClusterClick: (event) => {
+    // Try to stop any native/default handling across versions
+    try { event?.stop?.(); } catch {}
+    try { event?.preventDefault?.(); } catch {}
+    try { event?.domEvent?.stopPropagation?.(); } catch {}
+    try { event?.domEvent?.preventDefault?.(); } catch {}
+
+    const pos = event?.cluster?.position;
+    if (!pos) return;
+
+    map.panTo(pos);                              // built-in pan anim
+    const nextZoom = Math.min(map.getZoom() + 2, 18);
+    smoothZoom(map, nextZoom);                   // our smooth zoom
   }
+});
+
 
   // ===== INIT MAP =====
   async function initMap() {
