@@ -189,7 +189,7 @@
   const DEFAULT_ZOOM   = 5;
   const MAP_ID = "DEMO_MAP_ID";
 
-  // Load Google Maps (Advanced Markers)
+  // Ladda Google Maps (Advanced Markers)
   async function loadMaps() {
     const s = document.createElement("script");
     s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&loading=async&key=$GMAPS_KEY&callback=initMap";
@@ -205,7 +205,7 @@
   }
   function parseLocationString(loc){
     if(!loc) return null;
-    const [lat,lng] = loc.split(",").map(Number);
+    const [lat,lng] = String(loc).split(",").map(Number);
     return (Number.isNaN(lat)||Number.isNaN(lng)) ? null : {lat,lng};
   }
   function escapeHtml(str){
@@ -270,136 +270,164 @@
     return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
   }
 
-  // ===== INIT MAP (sök + badge-fix) =====
- async function initMap(){
-  const loadingEl = document.getElementById("loading");
-  const badge      = document.getElementById("badge");
-  const badgeText  = badge.querySelector(".badge-text");
-  const cityInput  = document.getElementById("cityInput");
-  const btnGo      = document.getElementById("cityGo");
-  const btnClear   = document.getElementById("cityClear");
+  // ===== INIT MAP =====
+  async function initMap(){
+    const loadingEl = document.getElementById("loading");
+    const badge      = document.getElementById("badge");
+    const badgeText  = badge?.querySelector(".badge-text");
+    const cityInput  = document.getElementById("cityInput");
+    const btnGo      = document.getElementById("cityGo");
+    const btnClear   = document.getElementById("cityClear");
 
-  const map = new google.maps.Map(document.getElementById("map"), {
-    center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
-  });
+    const map = new google.maps.Map(document.getElementById("map"), {
+      center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
+    });
 
- function setBadge(count, query) {
-  const n = Number.isFinite(count) ? count : 0;
-  const plural = n === 1 ? "hämtställe" : "hämtställen";
-  const q = (query ?? "").trim();
-  badgeText.textContent = q
-    ? `${n} ${plural} – filtrerat på ”${q}”`
-    : `${n} ${plural}`;
-}
+    // Kommer från API och används som fallback i badgen
+    let totalFromApi = null;
 
-  try{
-    const data = await fetchPickupPlaces();
-    const pins = Array.isArray(data?.Pins) ? data.Pins : [];
-    const markers = [];
-    const bounds = new google.maps.LatLngBounds();
-    const infoWindow = new google.maps.InfoWindow();
+    // Robust setBadge med fallback till totalFromApi
+    function setBadge(countMaybe, query) {
+      const n = Number.isFinite(countMaybe)
+        ? countMaybe
+        : (Number.isFinite(totalFromApi) ? totalFromApi : 0);
+      const plural = n === 1 ? "hämtställe" : "hämtställen";
+      const q = (query ?? "").trim();
+      const text = q ? `${n} ${plural} – filtrerat på ”${q}”` : `${n} ${plural}`;
+      try {
+        if (badgeText) badgeText.textContent = text;
+        // console.debug("[badge]", { n, q, text });
+      } catch (e) {
+        console.error("Kunde inte uppdatera badge:", e);
+      }
+    }
 
-    for(const p of pins){
-      const pos = parseLocationString(p.location);
-      if(!pos) continue;
-      const m = makeAdvancedMarker(pos, p.name ?? "");
-      m.addListener("gmp-click", () => {
-        try{ infoWindow.close(); }catch{}
-        const card=document.createElement("div");
-        card.className="sdab-card";
-        card.innerHTML = `
-          <div class="sdab-card__header">
-            <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
-            <button class="sdab-close" aria-label="Stäng">×</button>
-          </div>
-          <div class="sdab-card__panel">
-            <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
-            <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
-          </div>`;
-        card.querySelector(".sdab-close").addEventListener("click",(e)=>{ e.preventDefault(); e.stopPropagation(); infoWindow.close(); });
-        infoWindow.setContent(card);
-        infoWindow.open({ map, anchor: m });
+    try{
+      const data = await fetchPickupPlaces();
+
+      // Spara total från API om den finns
+      totalFromApi = Number.isFinite(+data?.results) ? +data.results : null;
+
+      // Tolerant pins-parsning (Pins, pins eller ren array)
+      const pins =
+        Array.isArray(data?.Pins) ? data.Pins :
+        Array.isArray(data?.pins) ? data.pins :
+        (Array.isArray(data) ? data : []);
+
+      const markers = [];
+      const bounds = new google.maps.LatLngBounds();
+      const infoWindow = new google.maps.InfoWindow();
+
+      for(const p of pins){
+        const pos = parseLocationString(p?.location);
+        if(!pos) continue;
+        const m = makeAdvancedMarker(pos, p?.name ?? "");
+        m.addListener("gmp-click", () => {
+          try{ infoWindow.close(); }catch{}
+          const card=document.createElement("div");
+          card.className="sdab-card";
+          card.innerHTML = `
+            <div class="sdab-card__header">
+              <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+              <button class="sdab-close" aria-label="Stäng">×</button>
+            </div>
+            <div class="sdab-card__panel">
+              <h3 class="sdab-card__title">${escapeHtml(p?.name ?? "")}</h3>
+              <p class="sdab-card__addr">${escapeHtml(p?.address ?? "")}</p>
+            </div>`;
+          card.querySelector(".sdab-close")?.addEventListener("click",(e)=>{
+            e.preventDefault(); e.stopPropagation(); infoWindow.close();
+          });
+          infoWindow.setContent(card);
+          infoWindow.open({ map, anchor: m });
+        });
+        markers.push(m);
+        bounds.extend(pos);
+      }
+
+      let clusterer = new markerClusterer.MarkerClusterer({
+        map, markers, renderer: { render: clusterRenderer }
       });
-      markers.push(m);
-      bounds.extend(pos);
+
+      // Visa totalen (markörer eller fallback till API)
+      setBadge(markers.length, "");
+
+      if(markers.length>1){
+        map.fitBounds(bounds);
+        google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
+      } else if (markers.length===1){
+        map.setCenter(markers[0].position);
+        map.setZoom(14);
+      }
+
+      // ===== FILTER =====
+      function applyFilter(queryRaw){
+        const displayQuery = (queryRaw ?? "").trim();  // exakt det användaren skrev
+        const q = norm(displayQuery);
+        const tokens = q.split(/[,\s]+/).filter(Boolean);
+
+        const filtered = [];
+        const fbounds = new google.maps.LatLngBounds();
+
+        markers.forEach((m,i)=>{
+          const p = pins[i];
+          const addrNorm = norm(((p?.address)||"") + " " + ((p?.name)||""));
+          const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
+
+          // Visa eller dölj marker
+          m.map = match ? map : null;
+
+          if(match){
+            filtered.push(m);
+            const pos = parseLocationString(p?.location);
+            if(pos) fbounds.extend(pos);
+          }
+        });
+
+        // Uppdatera clusterer robust
+        if (typeof clusterer.clearMarkers === "function") {
+          clusterer.clearMarkers();
+          if (filtered.length) clusterer.addMarkers(filtered);
+        } else {
+          clusterer = new markerClusterer.MarkerClusterer({
+            map,
+            markers: filtered,
+            renderer: { render: clusterRenderer }
+          });
+        }
+
+        // Uppdatera badge (alltid!)
+        setBadge(filtered.length, displayQuery);
+
+        // Kameralogik
+        if(filtered.length > 1){
+          map.fitBounds(fbounds);
+          google.maps.event.addListenerOnce(map,"idle",()=>{
+            if(map.getZoom()>12) map.setZoom(12);
+          });
+        } else if(filtered.length === 1){
+          map.setCenter(filtered[0].position);
+          map.setZoom(14);
+        }
+      }
+
+      // Input-händelser (debounce)
+      let debounceId;
+      function onInput(){ clearTimeout(debounceId); debounceId=setTimeout(()=>applyFilter(cityInput.value),180); }
+      cityInput?.addEventListener("input", onInput);
+      cityInput?.addEventListener("keydown", e=>{ if(e.key==="Enter") applyFilter(cityInput.value); });
+      btnGo?.addEventListener("click", ()=>applyFilter(cityInput.value));
+      btnClear?.addEventListener("click", ()=>{ cityInput.value=""; applyFilter(""); });
+
+    } catch(err){
+      console.error(err);
+      alert("Kunde inte ladda kartan.");
+    } finally {
+      // Dölj “Laddar karta…”
+      const loadingElFinal = document.getElementById("loading");
+      if (loadingElFinal) loadingElFinal.style.display = "none";
     }
-
-    let clusterer = new markerClusterer.MarkerClusterer({
-      map, markers, renderer: { render: clusterRenderer }
-    });
-
-    setBadge(markers.length, "");
-
-    if(markers.length>1){
-      map.fitBounds(bounds);
-      google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
-    }
-
-
-   function applyFilter(queryRaw){
-  const q = norm(queryRaw);
-  const tokens = q.split(/[,\s]+/).filter(Boolean);
-
-  const filtered = [];
-  const fbounds = new google.maps.LatLngBounds();
-
-  markers.forEach((m,i)=>{
-    const p = pins[i];
-    const addrNorm = norm((p.address||"") + " " + (p.name||""));
-    const match = tokens.length===0 || tokens.every(t => addrNorm.includes(t));
-
-    // Visa eller dölj marker
-    m.map = match ? map : null;
-
-    if(match){
-      filtered.push(m);
-      const pos = parseLocationString(p.location);
-      if(pos) fbounds.extend(pos);
-    }
-  });
-
-  // --- Uppdatera clusterer robust ---
-  if (typeof clusterer.clearMarkers === "function") {
-    clusterer.clearMarkers();
-    if (filtered.length) clusterer.addMarkers(filtered);
-  } else {
-    clusterer = new markerClusterer.MarkerClusterer({
-      map,
-      markers: filtered,
-      renderer: { render: clusterRenderer }
-    });
   }
-
-  // --- Uppdatera badge ---
-  const displayQuery = (queryRaw ?? "").trim();
-  setBadge(filtered.length, displayQuery);
-
-  // --- Kameralogik ---
-  if(filtered.length > 1){
-    map.fitBounds(fbounds);
-    google.maps.event.addListenerOnce(map,"idle",()=>{
-      if(map.getZoom()>12) map.setZoom(12);
-    });
-  } else if(filtered.length === 1){
-    map.setCenter(filtered[0].position);
-    map.setZoom(14);
-  }
-}
-    let debounceId;
-    function onInput(){ clearTimeout(debounceId); debounceId=setTimeout(()=>applyFilter(cityInput.value),180); }
-    cityInput.addEventListener("input", onInput);
-    cityInput.addEventListener("keydown", e=>{ if(e.key==="Enter") applyFilter(cityInput.value); });
-    btnGo?.addEventListener("click", ()=>applyFilter(cityInput.value));
-    btnClear?.addEventListener("click", ()=>{ cityInput.value=""; applyFilter(""); });
-
-  } catch(err){
-    console.error(err);
-    alert("Kunde inte ladda kartan.");
-  } finally {
-    // Dölj “Laddar karta…”
-    if (loadingEl) loadingEl.style.display = "none";
-  }
-}
 
   // boot
   window.initMap = initMap;
