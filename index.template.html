@@ -30,7 +30,7 @@
       width: 34px; height: 34px; border-radius: 50%;
       display: grid; place-items: center;
       background: #D9DFD9;                         /* inner bg */
-      border: 3px solid var(--sdab-green, #2E7D32);/* green border */
+      border: 1px solid var(--sdab-green, #2E7D32);/* green border */
       box-shadow: 0 2px 8px rgba(0,0,0,.28);       /* pop! */
       transform: translate3d(0,0,0);
     }
@@ -227,42 +227,65 @@
     return card;
   }
 
-  function clusterRenderer({ count, position }) {
-  // Coerce siffra
+  // --- SDAB-styled HTML cluster renderer (bigger, ring + shadow) ---
+function clusterRenderer({ count, position }) {
+  // 1) Safe count
   const n = Number.parseInt(String(count ?? "").trim(), 10);
   const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-  // Storlekar
-  let size = 52, font = 16, border = 2;
-  if (c >= 50 && c < 200) { size = 60; font = 18; }
-  else if (c >= 200)      { size = 70; font = 20; }
+  // 2) Size buckets (tweak freely)
+  let SIZE = 64, FONT = 16, BORDER = 3, GUTTER = 4;
+  if (c >= 25 && c < 100)   { SIZE = 72; FONT = 18; }
+  else if (c >= 100 && c < 250) { SIZE = 80; FONT = 20; }
+  else if (c >= 250)        { SIZE = 92; FONT = 22; }
 
-  // SDAB-färger
-  const BG_LIGHT = "#D9E0D9";
-  const BORDER_DARK = "#0A4003";
-  const NUM_DARK = "#0A4003";
+  // 3) SDAB colors
+  const BG_LIGHT    = "#D9E0D9"; // inner fill
+  const BORDER_DARK = "#0A4003"; // outer ring
+  const NUM_DARK    = "#0A4003"; // number
 
-  // Bygg HTML-badge
-  const el = document.createElement("div");
-  el.style.width = `${size}px`;
-  el.style.height = `${size}px`;
-  el.style.borderRadius = "50%";
-  el.style.background = BG_LIGHT;
-  el.style.border = `${border}px solid ${BORDER_DARK}`;
-  el.style.boxShadow = "0 2px 8px rgba(0,0,0,.25)";
-  el.style.display = "grid";
-  el.style.placeItems = "center";
-  el.style.userSelect = "none";
+  // 4) Outer circle (with shadow)
+  const outer = document.createElement("div");
+  outer.style.width        = `${SIZE}px`;
+  outer.style.height       = `${SIZE}px`;
+  outer.style.borderRadius = "50%";
+  outer.style.background   = BG_LIGHT;
+  outer.style.border       = `${BORDER}px solid ${BORDER_DARK}`;
+  outer.style.boxShadow    = "0 4px 12px rgba(0,0,0,.28)";
+  outer.style.position     = "relative";
+  outer.style.display      = "grid";
+  outer.style.placeItems   = "center";
+  outer.style.userSelect   = "none";
+  outer.style.cursor       = "pointer";
+  outer.style.transition   = "transform .12s ease";
+  outer.onmouseenter = () => (outer.style.transform = "scale(1.05)");
+  outer.onmouseleave = () => (outer.style.transform = "scale(1)");
 
+  // 5) Inner disc (subtle inset)
+  const inner = document.createElement("div");
+  const INNER = SIZE - BORDER * 2 - GUTTER * 2;
+  inner.style.width        = `${INNER}px`;
+  inner.style.height       = `${INNER}px`;
+  inner.style.borderRadius = "50%";
+  inner.style.background   = BG_LIGHT;
+  inner.style.boxShadow    = "inset 0 0 0 1px rgba(0,0,0,.08)";
+  outer.appendChild(inner);
+
+  // 6) Count label
   const label = document.createElement("div");
   label.textContent = String(c);
-  label.style.font = `800 ${font}px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
-  label.style.color = NUM_DARK;
-  el.appendChild(label);
+  label.style.position    = "absolute";
+  label.style.inset       = "0";
+  label.style.display     = "grid";
+  label.style.placeItems  = "center";
+  label.style.font        = `800 ${FONT}px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+  label.style.color       = NUM_DARK;
+  outer.appendChild(label);
 
+  // 7) Return as AdvancedMarker
   return new google.maps.marker.AdvancedMarkerElement({
     position,
-    content: el
+    content: outer
   });
 }
 
