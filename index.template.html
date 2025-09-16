@@ -29,7 +29,7 @@
       /* Size of the circular marker */
       width: 34px; height: 34px; border-radius: 50%;
       display: grid; place-items: center;
-      background: #ffffff;                         /* inner bg */
+      background: #D9DFD9;                         /* inner bg */
       border: 3px solid var(--sdab-green, #2E7D32);/* green border */
       box-shadow: 0 2px 8px rgba(0,0,0,.28);       /* pop! */
       transform: translate3d(0,0,0);
@@ -144,265 +144,213 @@
   <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 
   <script>
-    // ===== CONFIG =====
-    // Replace with your Azure Function endpoint
-    const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
+  // ===== CONFIG =====
+  const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places?";
+  const SDAB_LOGO_URL = "./sdab_small.png";
 
+  const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
+  const DEFAULT_ZOOM   = 5;
+  const MAP_ID = "DEMO_MAP_ID";
 
-    // SDAB logo used inside the circular marker
-	const SDAB_LOGO_URL = "./sdab_small.png";
+  // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
+  async function loadMaps() {
+    const s = document.createElement('script');
+    s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&loading=async&key=$GMAPS_KEY&callback=initMap";
+    s.async = true;
+    document.head.appendChild(s);
+  }
 
-    // SDAB-ish palette (tweak freely)
-    const SDAB_BACKGROUND  = "#D9E0D9";  // cluster outer ring
-    const SDAB_GREEN_DARK = "#0A4003";
-    const SDAB_GREEN_LIGHT = "#697760";  // cluster inner fill & pin border
+  // ===== UTIL =====
+  async function fetchPickupPlaces() {
+    const res = await fetch(API_URL, { method: "GET" });
+    if (!res.ok) throw new Error("Kunde inte hämta pickup places");
+    return res.json();
+  }
+  function parseLocationString(loc) {
+    if (!loc) return null;
+    const [lat, lng] = loc.split(",").map(Number);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { lat, lng };
+  }
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (s) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s])
+    );
+  }
 
-    // Map defaults
-    const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
-    const DEFAULT_ZOOM   = 5;
+  // ===== ADVANCED MARKER (circular badge with logo) =====
+  function makeAdvancedMarker(pos, title) {
+    const el = document.createElement("div");
+    el.className = "sdab-pin";
+    el.style.setProperty("--sdab-green", "#0A4003"); // dark border
 
-    // Vector map id (required for Advanced Markers). Replace with your own later.
-    const MAP_ID = "DEMO_MAP_ID";
-	
-	function buildInfoCard(p, onClose) {
-  const card = document.createElement("div");
-  card.className = "sdab-card";
-  card.innerHTML = `
-    <div class="sdab-card__header">
-      <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
-      <button class="sdab-close" aria-label="Stäng">×</button>
-    </div>
-    <div class="sdab-card__panel">
-      <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
-      <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
-    </div>
-  `;
+    const img = document.createElement("img");
+    img.src = SDAB_LOGO_URL;
+    img.alt = "SDAB";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => {
+      el.textContent = "S";
+      el.style.font = "600 14px/1 system-ui";
+      el.style.color = "#0A4003";
+    };
+    el.appendChild(img);
 
-  const closeBtn = card.querySelector(".sdab-close");
-  closeBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+    return new google.maps.marker.AdvancedMarkerElement({
+      position: pos,
+      title,
+      content: el
+    });
+  }
 
-    onClose();
-    setTimeout(() => {
-      try { onClose(); } catch {}
-    }, 0);
-  });
+  // ===== INFO CARD BUILDER (returns a DOM node) =====
+  function buildInfoCard(p, onClose) {
+    const card = document.createElement("div");
+    card.className = "sdab-card";
+    card.innerHTML = `
+      <div class="sdab-card__header">
+        <img class="sdab-card__logo" src="./SDAB_Logo_RGB_Horizontal.png" alt="Svensk Däckåtervinning">
+        <button class="sdab-close" aria-label="Stäng">×</button>
+      </div>
+      <div class="sdab-card__panel">
+        <h3 class="sdab-card__title">${escapeHtml(p.name ?? "")}</h3>
+        <p class="sdab-card__addr">${escapeHtml(p.address ?? "")}</p>
+      </div>
+    `;
+    const closeBtn = card.querySelector(".sdab-close");
+    closeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+      onClose();                // stäng direkt
+      setTimeout(() => { try { onClose(); } catch {} }, 0); // defensivt
+    });
+    return card;                // <-- VIKTIGT
+  }
 
-  return card;   
-}
-	
-    // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
-    async function loadMaps() {
-      const s = document.createElement('script');
-      // v=weekly + libraries=marker for AdvancedMarkerElement
-      s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&loading=async&key=$GMAPS_KEY&callback=initMap";
-      s.async = true;
-      document.head.appendChild(s);
-    }
+  // ===== CLUSTER RENDERER (SDAB: light bg, dark border & number) =====
+  function clusterRenderer({ count, position }) {
+    const n = Number.parseInt(String(count ?? "").trim(), 10);
+    const c = Number.isFinite(n) && n > 0 ? n : 1;
 
-    // ===== DATA FETCH =====
-    async function fetchPickupPlaces() {
-      const res = await fetch(API_URL, { method: "GET" });
-      if (!res.ok) throw new Error("Kunde inte hämta pickup places");
-      return res.json();
-    }
+    let outer = 52, inner = 34, font = 16;
+    if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
+    else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
 
-    function parseLocationString(loc) {
-      if (!loc) return null;
-      const [lat, lng] = loc.split(",").map(Number);
-      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-      return { lat, lng };
-    }
+    outer = Math.round(outer); inner = Math.round(inner);
 
-    // ===== ADVANCED MARKER (circular badge with logo) =====
-    function makeAdvancedMarker(pos, title) {
-  const el = document.createElement("div");
-  el.className = "sdab-pin";
-  el.style.setProperty("--sdab-green", "#0A4003"); // dark border
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg   = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${outer} ${outer}`);
+    svg.setAttribute("width", String(outer));
+    svg.setAttribute("height", String(outer));
 
-  const img = document.createElement("img");
-  img.src = "sdab_small.png";     // from your repo
-  img.alt = "SDAB";
-  img.referrerPolicy = "no-referrer";
-  img.onerror = () => {
-    el.textContent = "S";
-    el.style.font = "600 14px/1 system-ui";
-    el.style.color = "#0A4003";
-  };
+    const cx = outer / 2, cy = outer / 2;
+    const rOuter = Math.max(1, (outer / 2) - 1);
+    const rInner = Math.max(1, inner / 2);
 
-  el.appendChild(img);
+    const BG_LIGHT = "#D9E0D9", BORDER_DARK = "#0A4003", NUM_DARK = "#0A4003";
 
-  return new google.maps.marker.AdvancedMarkerElement({
-    position: pos,
-    title,
-    content: el
-  });
-}
+    const ring = document.createElementNS(svgNS, "circle");
+    ring.setAttribute("cx", cx); ring.setAttribute("cy", cy);
+    ring.setAttribute("r",  rOuter);
+    ring.setAttribute("fill", BG_LIGHT);
+    ring.setAttribute("stroke", BORDER_DARK);
+    ring.setAttribute("stroke-width", "1.5");
+    svg.appendChild(ring);
 
-/* Cluster renderer: light bg, thin dark border, dark number (SDAB colors).
-   Fully defensive so viewBox is always valid. */
-function clusterRenderer({ count, position }) {
-  // 1) Coerce count
-  const n = Number.parseInt(String(count ?? "").trim(), 10);
-  const c = Number.isFinite(n) && n > 0 ? n : 1;
+    const innerDisk = document.createElementNS(svgNS, "circle");
+    innerDisk.setAttribute("cx", cx); innerDisk.setAttribute("cy", cy);
+    innerDisk.setAttribute("r",  rInner);
+    innerDisk.setAttribute("fill", BG_LIGHT);
+    svg.appendChild(innerDisk);
 
-  // 2) Size buckets
-  let outer = 52, inner = 34, font = 16;
-  if (c >= 50 && c < 200) { outer = 60; inner = 40; font = 18; }
-  else if (c >= 200)      { outer = 70; inner = 46; font = 20; }
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", cx); text.setAttribute("y", cy);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("font-size", String(font));
+    text.setAttribute("font-weight", "800");
+    text.setAttribute("fill", NUM_DARK);
+    text.setAttribute("paint-order", "stroke");
+    text.setAttribute("stroke", "rgba(255,255,255,0.6)");
+    text.setAttribute("stroke-width", "1");
+    text.textContent = String(c);
+    svg.appendChild(text);
 
-  // 3) Safe numeric fallback
-  const safe = (v, d) => {
-    const num = Number(v);
-    return Number.isFinite(num) && num > 0 ? Math.round(num) : d;
-    // always int, >0
-  };
-  outer = safe(outer, 52);
-  inner = safe(inner, 34);
+    return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
+  }
 
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg   = document.createElementNS(svgNS, "svg");
+  // ===== INIT MAP =====
+  async function initMap() {
+    const badgeEl   = document.getElementById("badge");
+    const loadingEl = document.getElementById("loading");
 
-  // build a guaranteed-good viewBox
-  const vbW = String(outer);
-  const vbH = String(outer);
-  svg.setAttribute("viewBox", ["0","0", vbW, vbH].join(" "));
-  svg.setAttribute("width", vbW);
-  svg.setAttribute("height", vbH);
+    const map = new google.maps.Map(document.getElementById("map"), {
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      mapTypeControl: true,
+      mapId: MAP_ID
+    });
 
-  const cx = outer / 2;
-  const cy = outer / 2;
-  const rOuter = Math.max(1, (outer / 2) - 1);
-  const rInner = Math.max(1, inner / 2);
+    try {
+      const data = await fetchPickupPlaces();
+      const pins = Array.isArray(data?.Pins) ? data.Pins : [];
+      badgeEl.textContent = `${pins.length} platser`;
 
-  // SDAB colors
-  const BG_LIGHT    = "#D9E0D9";
-  const BORDER_DARK = "#0A4003";
-  const NUM_DARK    = "#0A4003";
+      const markers = [];
+      const bounds = new google.maps.LatLngBounds();
+      const infoWindow = new google.maps.InfoWindow();
 
-  // Outer ring
-  const ring = document.createElementNS(svgNS, "circle");
-  ring.setAttribute("cx", String(cx));
-  ring.setAttribute("cy", String(cy));
-  ring.setAttribute("r",  String(rOuter));
-  ring.setAttribute("fill", BG_LIGHT);
-  ring.setAttribute("stroke", BORDER_DARK);
-  ring.setAttribute("stroke-width", "1.5");
-  svg.appendChild(ring);
+      for (const p of pins) {
+        const pos = parseLocationString(p.location);
+        if (!pos) continue;
 
-  // Inner disk (flat, same light color)
-  const innerDisk = document.createElementNS(svgNS, "circle");
-  innerDisk.setAttribute("cx", String(cx));
-  innerDisk.setAttribute("cy", String(cy));
-  innerDisk.setAttribute("r",  String(rInner));
-  innerDisk.setAttribute("fill", BG_LIGHT);
-  svg.appendChild(innerDisk);
-
-  // Count
-  const text = document.createElementNS(svgNS, "text");
-  text.setAttribute("x", String(cx));
-  text.setAttribute("y", String(cy));
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("dominant-baseline", "middle");
-  text.setAttribute("font-size", String(font));
-  text.setAttribute("font-weight", "800");
-  text.setAttribute("fill", NUM_DARK);
-  text.setAttribute("paint-order", "stroke");
-  text.setAttribute("stroke", "rgba(255,255,255,0.6)");
-  text.setAttribute("stroke-width", "1");
-  text.textContent = String(c);
-  svg.appendChild(text);
-
-  return new google.maps.marker.AdvancedMarkerElement({
-    position,
-    content: svg
-  });
-}
-    // ===== INIT MAP =====
-    async function initMap() {
-      const badgeEl   = document.getElementById("badge");
-      const loadingEl = document.getElementById("loading");
-
-      const map = new google.maps.Map(document.getElementById("map"), {
-        center: DEFAULT_CENTER,
-        zoom: DEFAULT_ZOOM,
-        mapTypeControl: true,
-        mapId: MAP_ID
-      });
-
-      try {
-        const data = await fetchPickupPlaces();
-        const pins = Array.isArray(data?.Pins) ? data.Pins : [];
-        badgeEl.textContent = `${pins.length} platser`;
-
-        const markers = [];
-        const bounds = new google.maps.LatLngBounds();
-        const infoWindow = new google.maps.InfoWindow();
-
-        for (const p of pins) {
-          const pos = parseLocationString(p.location);
-          if (!pos) continue;
-
-          const marker = makeAdvancedMarker(pos, p.name ?? "");
+        const marker = makeAdvancedMarker(pos, p.name ?? "");
 
         marker.addListener("gmp-click", () => {
-  // bygg DOM-elementet med vår helper
-  const node = buildInfoCard(p, () => infoWindow.close());
+          // stäng ev. öppen ruta
+          try { infoWindow.close(); } catch {}
 
-  // stäng ev. redan öppen IW innan vi öppnar en ny
-  try { infoWindow.close(); } catch {}
+          // bygg DOM-node, sätt content och öppna (ankrat till markern)
+          const node = buildInfoCard(p, () => infoWindow.close());
+          infoWindow.setContent(node);
 
-  infoWindow.setContent(node);
-  if (google.maps.marker?.AdvancedMarkerElement &&
-      marker instanceof google.maps.marker.AdvancedMarkerElement) {
-    infoWindow.open({ map, anchor: marker });
-  } else {
-    infoWindow.setPosition(pos);
-    infoWindow.open({ map });
-  }
-});  // <-- OBS! viktigt att detta sista parentes + klammer finns
-
-          markers.push(marker);
-          bounds.extend(pos);
-        }
-
-        // Cluster using Advanced Markers with SDAB renderer
-        new markerClusterer.MarkerClusterer({
-          map,
-          markers,
-          renderer: { render: clusterRenderer }
+          if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
+            infoWindow.open({ map, anchor: marker });
+          } else {
+            infoWindow.setPosition(pos);
+            infoWindow.open({ map });
+          }
         });
 
-        if (markers.length > 1) {
-          map.fitBounds(bounds);
-          google.maps.event.addListenerOnce(map, "idle", () => {
-            if (map.getZoom() > 12) map.setZoom(12);
-          });
-        }
-      } catch (err) {
-        console.error(err);
-        badgeEl.textContent = "Fel vid laddning";
-        alert("Kunde inte ladda kartan.");
-      } finally {
-        loadingEl.style.display = "none";
+        markers.push(marker);
+        bounds.extend(pos);
       }
-    }
 
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, (s) => {
-        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s];
+      new markerClusterer.MarkerClusterer({
+        map,
+        markers,
+        renderer: { render: clusterRenderer }
       });
+
+      if (markers.length > 1) {
+        map.fitBounds(bounds);
+        google.maps.event.addListenerOnce(map, "idle", () => {
+          if (map.getZoom() > 12) map.setZoom(12);
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      badgeEl.textContent = "Fel vid laddning";
+      alert("Kunde inte ladda kartan.");
+    } finally {
+      loadingEl.style.display = "none";
     }
+  }
 
-    // Expose for Google Maps callback
-    window.initMap = initMap;
-
-    // Kick off
-    loadMaps().catch((err) => {
-      console.error('Failed to load Google Maps script:', err);
-    });
-  </script>
+  // Expose for Google Maps callback & kick off
+  window.initMap = initMap;
+  loadMaps().catch((err) => console.error('Failed to load Google Maps script:', err));
+</script>
 </body>
 </html>
