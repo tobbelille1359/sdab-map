@@ -231,23 +231,6 @@ function safeCount(x, fallback=0){
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
-/* Debug HUD om något skriver över badge */
-function debugToast(msg){
-  let t = document.getElementById("__badge_toast");
-  if(!t){
-    t = document.createElement("div");
-    t.id="__badge_toast";
-    Object.assign(t.style,{
-      position:"fixed",right:"12px",bottom:"12px",zIndex:99999,
-      background:"#B00020",color:"#fff",padding:"8px 10px",
-      borderRadius:"8px",font:"12px/1.2 system-ui",boxShadow:"0 8px 20px rgba(0,0,0,.25)"
-    });
-    document.body.appendChild(t);
-  }
-  t.textContent = msg;
-  setTimeout(()=>{ if(t) t.remove(); }, 3000);
-}
-
 /* Advanced marker */
 function makeAdvancedMarker(pos,title){
   const el = document.createElement("div");
@@ -260,7 +243,7 @@ function makeAdvancedMarker(pos,title){
   return new google.maps.marker.AdvancedMarkerElement({ position:pos, title, content:el });
 }
 
-/* Klusterrenderare */
+/* Cluster renderer */
 function clusterRenderer({ count, position }){
   const c = safeCount(count, 1);
   let SIZE=44, INNER=30, FONT=14, STROKE=2;
@@ -308,15 +291,16 @@ async function initMap(){
   const btnGo     = document.getElementById("cityGo");
   const btnClear  = document.getElementById("cityClear");
 
-  if(!badgeText){
-    console.error("Hittar inte .badge-text i DOM.");
-    debugToast("Fel: .badge-text saknas i DOM");
-  } else {
-    // Observa ändringar för att upptäcka overwrite
-    const mo = new MutationObserver(()=>{
-      console.warn("[MO] badge ändrad till:", JSON.stringify(badgeText.textContent));
+  // Säkerställ att badge-text kan synas (CSS-override)
+  if (badgeText) {
+    Object.assign(badgeText.style, {
+      fontFamily: 'Arial, Helvetica, Roboto, sans-serif',
+      color: '#0A4003',
+      opacity: '1',
+      mixBlendMode: 'normal',
+      filter: 'none',
+      textShadow: 'none'
     });
-    mo.observe(badgeText, { characterData:true, subtree:true, childList:true });
   }
 
   const map = new google.maps.Map(document.getElementById("map"), {
@@ -325,37 +309,9 @@ async function initMap(){
 
   let totalFromApi = 0;
 
-  // Failsafe writer (innerHTML + nbsp, 3 skrivningar)
-  function writeBadgeStrong(text, meta){
-    if(!badgeText) return;
-    const printable = (typeof text === "string" ? text : String(text));
-    const empty = /^\s*$/.test(printable);
-    const final = empty ? "[#FEL: tom badge-text]" : printable;
-
-    // skriv med &nbsp; som mellanrum (förhindra ”magisk” kollaps)
-    const html = final
-      .replaceAll(" ", "&nbsp;")
-      .replaceAll("–", "&ndash;")
-      .replaceAll("”", "&rdquo;")
-      .replaceAll("“", "&ldquo;");
-
-    badgeText.innerHTML = html;
-    badge.setAttribute("aria-label", final);
-    console.log("%c[Badge write]", "color:#0A4003;font-weight:700",
-      { text: final, len: final.length, meta });
-
-    // skriv igen lite senare om något försöker skriva över
-    setTimeout(()=>{ if (badgeText.innerText.trim() !== final.replaceAll("&nbsp;"," ").trim()) {
-      badgeText.innerHTML = html;
-      console.log("[Badge re-write @50ms]");
-    }}, 50);
-    setTimeout(()=>{ if (badgeText.innerText.trim() !== final.replaceAll("&nbsp;"," ").trim()) {
-      badgeText.innerHTML = html;
-      console.log("[Badge re-write @300ms]");
-    }}, 300);
-  }
-
+  // Failsafe writer
   function setBadge(countMaybe, queryRaw) {
+    if(!badgeText) return;
     const n = safeCount(countMaybe, safeCount(totalFromApi, 0));
     const nTxt = n.toLocaleString("sv-SE");
     const plural = n === 1 ? "hämtställe" : "hämtställen";
@@ -366,13 +322,14 @@ async function initMap(){
       ? `${nTxt} ${plural} – filtrerat på ”${qTrim}”`
       : `${nTxt} ${plural}`;
 
-    // Om det ändå blir tomt (bugg/overwrite) – visa tydlig fallback
+    // Fallback om tom
     if (/^\s*$/.test(text)) text = `[${nTxt} ${plural}]`;
 
-    writeBadgeStrong(text, { from:"setBadge", n, nTxt, plural, qTrim, hasQuery });
+    badgeText.textContent = text;
+    badge.setAttribute("aria-label", text);
+    console.log("[Badge]", text);
   }
-  // exponera för konsolen
-  window.__setBadge = setBadge;
+  window.__setBadge = setBadge; // för att kunna testa i konsolen
 
   try{
     const data = await fetchPickupPlaces();
@@ -458,7 +415,9 @@ async function initMap(){
 
       if(filtered.length > 1){
         map.fitBounds(fbounds);
-        google.maps.event.addListenerOnce(map,"idle",()=>{ if(map.getZoom()>12) map.setZoom(12); });
+        google.maps.event.addListenerOnce(map,"idle",()=>{
+          if(map.getZoom()>12) map.setZoom(12);
+        });
       } else if(filtered.length === 1){
         map.setCenter(filtered[0].position);
         map.setZoom(14);
