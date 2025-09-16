@@ -178,18 +178,19 @@
     </div>
   `;
 
- const closeBtn = card.querySelector(".sdab-close");
-closeBtn.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+  const closeBtn = card.querySelector(".sdab-close");
+  closeBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
 
-  onClose();                         // stänger rutan
-  // defensivt: rensa innehållet ett tick senare så inget återöppnas pga layout
-  setTimeout(() => {
-    try { onClose(); } catch {}
-  }, 0);
-});
+    onClose();
+    setTimeout(() => {
+      try { onClose(); } catch {}
+    }, 0);
+  });
+
+  return card;   
 }
 	
     // ===== LOAD GOOGLE MAPS (Advanced Markers) =====
