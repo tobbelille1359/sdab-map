@@ -220,6 +220,11 @@ function norm(s){
     .replace(/å/gi,"a").replace(/ä/gi,"a").replace(/ö/gi,"o")
     .toLowerCase().trim();
 }
+// säker numerik
+function safeCount(x, fallback=0){
+  const n = Number(x);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
 /* Advanced marker med SDAB-ikon */
 function makeAdvancedMarker(pos,title){
@@ -235,7 +240,7 @@ function makeAdvancedMarker(pos,title){
 
 /* SDAB-klusterrenderare (stabila viewBox) */
 function clusterRenderer({ count, position }){
-  const c = Number.isFinite(+count) && +count>0 ? +count : 1;
+  const c = safeCount(count, 1);
   let SIZE=44, INNER=30, FONT=14, STROKE=2;
   if(c>=25 && c<100){ SIZE=52; INNER=36; FONT=16; }
   else if(c>=100 && c<250){ SIZE=60; INNER=42; FONT=18; }
@@ -285,40 +290,34 @@ async function initMap(){
     center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapTypeControl: true, mapId: MAP_ID
   });
 
-  // Kommer från API och används som fallback i badgen
-  let totalFromApi = null;
+  // total från API, fallback i badgen
+  let totalFromApi = 0;
 
-  // Robust setBadge: alltid numerisk del, suffix bara om söksträng innehåller något icke-whitespace
+  // Robust setBadge (ALLTID siffra, suffix bara när det faktiskt finns söktext)
   function setBadge(countMaybe, queryRaw) {
-    const nCand = Number(countMaybe);
-    const n = Number.isFinite(nCand)
-      ? nCand
-      : (Number.isFinite(Number(totalFromApi)) ? Number(totalFromApi) : 0);
-
+    const n = safeCount(countMaybe, safeCount(totalFromApi, 0));
+    const nTxt = n.toLocaleString("sv-SE");
     const plural = n === 1 ? "hämtställe" : "hämtställen";
 
-    const q = typeof queryRaw === "string" ? queryRaw : "";
-    const hasQuery = /\S/.test(q); // minst ett icke-whitespace-tecken
+    const raw = typeof queryRaw === "string" ? queryRaw : "";
+    const qTrim = raw.trim();
+    const hasQuery = qTrim.length > 0;
 
-    const base = `${n} ${plural}`;
-    const text = hasQuery ? `${base} – filtrerat på ”${q}”` : base;
+    const text = hasQuery
+      ? `${nTxt} ${plural} – filtrerat på ”${qTrim}”`
+      : `${nTxt} ${plural}`;
 
-    try {
-      if (badgeText) {
-        badgeText.textContent = text;
-        badge.setAttribute("aria-label", text); // hjälp vid felsökning
-      }
-      // console.debug("[badge]", { countMaybe, totalFromApi, n, plural, q, hasQuery, text });
-    } catch (e) {
-      console.error("Kunde inte uppdatera badge:", e);
+    if (badgeText) {
+      badgeText.textContent = text;
+      badge.setAttribute("aria-label", text);
     }
   }
 
   try{
     const data = await fetchPickupPlaces();
 
-    // Spara total från API om den finns
-    totalFromApi = Number.isFinite(+data?.results) ? +data.results : null;
+    // total från API om finns, annars 0
+    totalFromApi = safeCount(data?.results, 0);
 
     // Tolerant pins-parsning (Pins, pins eller ren array)
     const pins =
@@ -361,7 +360,7 @@ async function initMap(){
       map, markers, renderer: { render: clusterRenderer }
     });
 
-    // Visa totalen (antal renderade markörer; fallback till API om något strular)
+    // Badge: visa antal renderade markörer (fallback till data.results)
     setBadge(markers.length, "");
 
     if(markers.length>1){
@@ -374,9 +373,8 @@ async function initMap(){
 
     /* ===== FILTER ===== */
     function applyFilter(queryRaw){
-      const displayQuery = (queryRaw ?? "");      // exakt det användaren skrev
-      const q = norm(displayQuery.trim());        // normaliserad för matchning
-      const tokens = q.split(/[,\s]+/).filter(Boolean);
+      const displayQuery = String(queryRaw ?? ""); // rå text
+      const tokens = norm(displayQuery).split(/[,\s]+/).filter(Boolean);
 
       const filtered = [];
       const fbounds = new google.maps.LatLngBounds();
@@ -395,7 +393,7 @@ async function initMap(){
         }
       });
 
-      // Uppdatera clusterer robust
+      // Uppdatera clusterer
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
         if (filtered.length) clusterer.addMarkers(filtered);
@@ -407,10 +405,10 @@ async function initMap(){
         });
       }
 
-      // Uppdatera badge (alltid!) – visar inte suffix om displayQuery bara är whitespace/tomt
+      // Badge – suffix visas bara när displayQuery inte är tom efter trim
       setBadge(filtered.length, displayQuery);
 
-      // Kameralogik
+      // Kamera
       if(filtered.length > 1){
         map.fitBounds(fbounds);
         google.maps.event.addListenerOnce(map,"idle",()=>{
@@ -432,9 +430,11 @@ async function initMap(){
 
   } catch(err){
     console.error(err);
+    // Vid fel: visa 0 hämtställen, utan suffix
+    const zero = 0;
+    setBadge(zero, "");
     alert("Kunde inte ladda kartan.");
   } finally {
-    // Dölj “Laddar karta…”
     const loadingElFinal = document.getElementById("loading");
     if (loadingElFinal) loadingElFinal.style.display = "none";
   }
