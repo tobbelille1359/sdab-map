@@ -176,17 +176,18 @@ const API_URL = "https://sdabgetpickupplaces.azurewebsites.net/api/pickup-places
 const SDAB_LOGO_URL = "./sdab_small.png";
 const DEFAULT_CENTER = { lat: 62.0, lng: 15.0 };
 const DEFAULT_ZOOM   = 5;
-const MAP_ID = "DEMO_MAP_ID";
+const MAP_ID = "DEMO_MAP_ID"; // byt till din riktiga mapId
 
-// ===== load Google Maps (Advanced Markers) =====
-async function loadMaps() {
+// ===== Load Google Maps (Advanced Markers) =====
+function loadMaps() {
   const s = document.createElement('script');
+  // v=weekly + libraries=marker krävs för AdvancedMarkerElement
   s.src = "https://maps.googleapis.com/maps/api/js?v=weekly&libraries=marker&loading=async&key=$GMAPS_KEY&callback=initMap";
   s.async = true;
   document.head.appendChild(s);
 }
 
-// ===== utils =====
+// ===== Utils =====
 async function fetchPickupPlaces() {
   const res = await fetch(API_URL, { method: "GET" });
   if (!res.ok) throw new Error("Kunde inte hämta pickup places");
@@ -203,18 +204,8 @@ function escapeHtml(str) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s])
   );
 }
-function norm(s) {
-  return String(s || "")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/å/gi, "a").replace(/ä/gi, "a").replace(/ö/gi, "o")
-    .toLowerCase().trim();
-}
-function cityFromAddress(addr) {
-  const parts = String(addr || "").split(",").map(s => s.trim());
-  return parts.length ? parts[parts.length - 1] : "";
-}
 
-// ===== markers =====
+// ===== Markers =====
 function makeAdvancedMarker(pos, title) {
   const el = document.createElement("div");
   el.className = "sdab-pin";
@@ -230,10 +221,14 @@ function makeAdvancedMarker(pos, title) {
   };
   el.appendChild(img);
 
-  return new google.maps.marker.AdvancedMarkerElement({ position: pos, title, content: el });
+  return new google.maps.marker.AdvancedMarkerElement({
+    position: pos,
+    title,
+    content: el
+  });
 }
 
-// ===== info card =====
+// ===== Info card =====
 function buildInfoCard(p, onClose) {
   const card = document.createElement("div");
   card.className = "sdab-card";
@@ -255,15 +250,16 @@ function buildInfoCard(p, onClose) {
   return card;
 }
 
-// ===== SDAB cluster renderer =====
+// ===== SDAB cluster renderer (storlek efter antal) =====
 function clusterRenderer({ count, position }) {
   const n = Number.parseInt(String(count ?? "").trim(), 10);
   const c = Number.isFinite(n) && n > 0 ? n : 1;
 
+  // Bas + buckets
   let SIZE = 44, INNER = 30, FONT = 14, STROKE = 2;
-  if (c >= 25 && c < 100)      { SIZE = 52; INNER = 36; FONT = 16; }
-  else if (c >= 100 && c < 250){ SIZE = 60; INNER = 42; FONT = 18; }
-  else if (c >= 250)           { SIZE = 72; INNER = 50; FONT = 20; }
+  if (c >= 25 && c < 100)       { SIZE = 52; INNER = 36; FONT = 16; }
+  else if (c >= 100 && c < 250) { SIZE = 60; INNER = 42; FONT = 18; }
+  else if (c >= 250)            { SIZE = 72; INNER = 50; FONT = 20; }
 
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
@@ -304,10 +300,12 @@ function clusterRenderer({ count, position }) {
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
 }
 
-// ===== INIT MAP (smooth cluster zoom + ORT-filter) =====
+// ===== INIT MAP (smooth cluster zoom + sök på ort/ZIP) =====
 async function initMap() {
   const badgeEl   = document.getElementById("badge");
   const loadingEl = document.getElementById("loading");
+
+  // Search UI elements (ska finnas i din HTML)
   const cityInput = document.getElementById("cityInput");
   const cityGo    = document.getElementById("cityGo");
   const cityClear = document.getElementById("cityClear");
@@ -319,12 +317,13 @@ async function initMap() {
     mapId: MAP_ID
   });
 
-  // smooth zoom helper (center-locked, cancellable)
+  // Mjuk, avbrytbar zoom (låser center)
   let zoomToken = 0;
   function smoothZoom(targetZoom, center) {
     targetZoom = Math.max(1, Math.min(20, targetZoom));
     const token = ++zoomToken;
-    const stepDelay = 120;
+    const stepDelay = 120; // 100–140 känns bra
+
     const step = () => {
       if (token !== zoomToken) return;
       const z = map.getZoom();
@@ -345,11 +344,12 @@ async function initMap() {
     const bounds = new google.maps.LatLngBounds();
     const infoWindow = new google.maps.InfoWindow();
 
+    // Markers
     for (const p of pins) {
       const pos = parseLocationString(p.location);
       if (!pos) continue;
-
       const marker = makeAdvancedMarker(pos, p.name ?? "");
+
       marker.addListener("gmp-click", () => {
         try { infoWindow.close(); } catch {}
         const node = buildInfoCard(p, () => infoWindow.close());
@@ -361,13 +361,14 @@ async function initMap() {
       bounds.extend(pos);
     }
 
+    // Clusterer
     let clusterer = new markerClusterer.MarkerClusterer({
       map,
       markers,
       renderer: { render: clusterRenderer }
     });
 
-    // cluster click → pan, then smooth zoom
+    // Klick på kluster → pan + smooth zoom
     function handleClusterClick(ev) {
       try { ev?.stop?.(); } catch {}
       try { ev?.preventDefault?.(); } catch {}
@@ -389,7 +390,7 @@ async function initMap() {
       : google.maps.event.addListener(clusterer, "clusterclick", handleClusterClick)
     );
 
-    // initial fit
+    // Första vy
     if (markers.length > 1) {
       map.fitBounds(bounds);
       google.maps.event.addListenerOnce(map, "idle", () => {
@@ -397,37 +398,70 @@ async function initMap() {
       });
     }
 
-    // ---------- ORT-FILTER ----------
-    const allPins = pins;
-    const allMarkers = markers;
+    // ====== Sök på ort + postnummer (samma fält) ======
+    function norm(s) {
+      return String(s || "")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/å/gi, "a").replace(/ä/gi, "a").replace(/ö/gi, "o")
+        .toLowerCase().trim();
+    }
+    function parseZipCity(address) {
+      const raw = String(address || "");
+      const m = raw.match(/\b(\d{3}\s?\d{2})\b/);       // 123 45 eller 12345
+      const zip = m ? m[1].replace(/\s/g, "") : "";
+      let city = "";
+      const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+      if (parts.length >= 2) city = parts[parts.length - 1];
+      else if (m) city = raw.slice(m.index + m[0].length).trim();
+      return { zip, city };
+    }
 
-    function applyCityFilter(query) {
-      const q = norm(query);
+    // Indexera pins för snabb filter
+    const idx = pins.map(p => {
+      const { zip, city } = parseZipCity(p.address);
+      return {
+        zipNorm: norm(zip),           // t.ex. "90330"
+        cityNorm: norm(city),         // t.ex. "umea"
+        loc: parseLocationString(p.location)
+      };
+    });
+
+    function matches(idxEntry, tokens) {
+      if (!tokens.length) return true;
+      for (const t of tokens) {
+        if (/^\d+$/.test(t)) { // bara siffror ⇒ jämför postnr-början
+          if (!idxEntry.zipNorm.startsWith(t)) return false;
+        } else {               // bokstäver ⇒ matcha ort
+          if (!idxEntry.cityNorm.includes(t)) return false;
+        }
+      }
+      return true;
+    }
+
+    function applySearchFilter(query) {
+      const tokens = norm(query).split(/\s+/).filter(Boolean);
+
       try { infoWindow.close(); } catch {}
 
-      const filtered = [];
-      const b = new google.maps.LatLngBounds();
+      const shown = [];
+      const fit = new google.maps.LatLngBounds();
 
-      for (let i = 0; i < allPins.length; i++) {
-        const p = allPins[i];
-        const m = allMarkers[i];
-        const city = cityFromAddress(p.address);
-        const match = !q || norm(city).includes(q);
-
-        m.map = match ? map : null;          // visa/dölj AdvancedMarker
-        if (match) {
-          filtered.push(m);
-          const pos = parseLocationString(p.location);
-          if (pos) b.extend(pos);
+      for (let i = 0; i < markers.length; i++) {
+        const keep = matches(idx[i], tokens);
+        markers[i].map = keep ? map : null; // visa/dölj AdvancedMarker
+        if (keep && idx[i].loc) {
+          shown.push(markers[i]);
+          fit.extend(idx[i].loc);
         }
       }
 
+      // uppdatera clusterer
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
-        if (filtered.length) clusterer.addMarkers(filtered);
+        if (shown.length) clusterer.addMarkers(shown);
       } else {
         clusterer = new markerClusterer.MarkerClusterer({
-          map, markers: filtered, renderer: { render: clusterRenderer }
+          map, markers: shown, renderer: { render: clusterRenderer }
         });
         (typeof clusterer.addListener === "function"
           ? clusterer.addListener("clusterclick", handleClusterClick)
@@ -435,33 +469,38 @@ async function initMap() {
         );
       }
 
-      badgeEl.textContent = q
-        ? `${filtered.length} platser – filtrerat på “${query}”`
-        : `${allMarkers.length} platser`;
+      const total = shown.length;
+      badgeEl.textContent = tokens.length
+        ? `${total} platser – filtrerat på “${query}”`
+        : `${pins.length} platser`;
 
-      if (filtered.length > 1) {
-        map.fitBounds(b);
+      if (shown.length > 1) {
+        map.fitBounds(fit);
         google.maps.event.addListenerOnce(map, "idle", () => {
           if (map.getZoom() > 12) map.setZoom(12);
         });
-      } else if (filtered.length === 1) {
-        map.setCenter(filtered[0].position);
+      } else if (shown.length === 1) {
+        map.setCenter(shown[0].position);
         map.setZoom(14);
       }
     }
 
-    // UI hooks
-    let debounceId;
-    function onCityInput() {
-      clearTimeout(debounceId);
-      debounceId = setTimeout(() => applyCityFilter(cityInput.value), 180);
+    // Hooka UI (med debounce)
+    if (cityInput && cityGo && cityClear) {
+      let debounceId;
+      function onInput() {
+        clearTimeout(debounceId);
+        debounceId = setTimeout(() => applySearchFilter(cityInput.value), 180);
+      }
+      cityInput.addEventListener("input", onInput);
+      cityInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") applySearchFilter(cityInput.value);
+      });
+      cityGo.addEventListener("click", () => applySearchFilter(cityInput.value));
+      cityClear.addEventListener("click", () => { cityInput.value = ""; applySearchFilter(""); });
     }
-    cityInput.addEventListener("input", onCityInput);
-    cityInput.addEventListener("keydown", (e) => { if (e.key === "Enter") applyCityFilter(cityInput.value); });
-    cityGo.addEventListener("click", () => applyCityFilter(cityInput.value));
-    cityClear.addEventListener("click", () => { cityInput.value = ""; applyCityFilter(""); });
+    // ====== /Sök ======
 
-    // ---------- /ORT-FILTER ----------
   } catch (err) {
     console.error(err);
     badgeEl.textContent = "Fel vid laddning";
@@ -471,9 +510,9 @@ async function initMap() {
   }
 }
 
-// Expose for Google Maps callback & kick off
+// Expose för Google Maps callback & starta
 window.initMap = initMap;
-loadMaps().catch((err) => console.error('Failed to load Google Maps script:', err));
+loadMaps();
 </script>
 </body>
 </html>
