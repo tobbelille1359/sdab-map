@@ -214,7 +214,8 @@ function setBadge(count){
   if(!el) return;
   const n = Number.isFinite(+count) ? +count : 0;
   const plural = n === 1 ? 'hämtställe' : 'hämtställen';
-  el.textContent = `${n.toLocaleString("sv-SE")} ${plural}`;
+  //el.textContent = `${n.toLocaleString("sv-SE")} ${plural}`;
+	el.textContent = `${n.toLocaleString("sv-SE")} hämtställen`;
   el.setAttribute("aria-label", el.textContent);
 }
 
