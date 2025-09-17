@@ -208,28 +208,56 @@ function norm(s){
     .toLowerCase().trim();
 }
 
-/* ==== BADGE ==== */
+/* ==== BADGE (enkel) ==== */
 function setBadge(count){
   const el = document.getElementById("badge");
   if(!el) return;
   const n = Number.isFinite(+count) ? +count : 0;
-  el.textContent = `${n.toLocaleString("sv-SE")} hämtställen`; // enkel text
+  el.textContent = `${n.toLocaleString("sv-SE")} hämtställen`;
   el.setAttribute("aria-label", el.textContent);
 }
 
-/* ==== ADVANCED MARKER ==== */
+/* ==== ADVANCED MARKER (logga + valfri "1") ==== */
 function makeAdvancedMarker(pos,title){
-  const el=document.createElement("div");
-  el.className="sdab-pin";
-  el.style.setProperty("--sdab-green","#0A4003");
-  const img=document.createElement("img");
-  img.src=SDAB_LOGO_URL; img.alt="SDAB";
-  img.onerror=()=>{ el.textContent="S"; el.style.font="600 14px/1 system-ui"; el.style.color="#0A4003"; };
-  el.appendChild(img);
-  return new google.maps.marker.AdvancedMarkerElement({
-    position:pos, title, content:el,
+  const wrap = document.createElement("div");
+  wrap.className = "sdab-pin";
+  wrap.style.setProperty("--sdab-green","#0A4003");
+  wrap.style.position = "relative";
+
+  const img = document.createElement("img");
+  img.src = SDAB_LOGO_URL; 
+  img.alt = "SDAB";
+  img.onerror = () => {
+    wrap.textContent = "S";
+    wrap.style.font = "600 14px/1 system-ui";
+    wrap.style.color = "#0A4003";
+  };
+  wrap.appendChild(img);
+
+  // Overlay med "1" (mittcentrerad, visas beroende på zoom)
+  const label = document.createElement("div");
+  label.className = "sdab-pin__label";
+  label.textContent = "1";
+  Object.assign(label.style, {
+    position: "absolute",
+    inset: "0",
+    display: "grid",
+    placeItems: "center",
+    font: "700 12px/1 system-ui",
+    color: "#0A4003",
+    pointerEvents: "none"
+  });
+  wrap.appendChild(label);
+
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    position: pos,
+    title,
+    content: wrap,
     collisionBehavior: google.maps.CollisionBehavior.REQUIRED_AND_HIDES_OPTIONAL
   });
+
+  marker.__labelEl = label; // för snabb toggling
+  return marker;
 }
 
 /* ==== INFO CARD ==== */
@@ -289,6 +317,18 @@ function clusterRenderer({ count, position }){
   return new google.maps.marker.AdvancedMarkerElement({ position, content: svg });
 }
 
+/* ==== SINGLE-PIN LABEL TOGGLING ==== */
+const LOGO_ONLY_MAX_ZOOM = 7; // zoom ≤ 7 => bara logga, zoom > 7 => visa lilla "1"
+function updateSinglePinLabels(map, markerList){
+  const z = map.getZoom() ?? 0;
+  const showOne = z > LOGO_ONLY_MAX_ZOOM; // byt till "<=" om du vill invertera
+  for (const m of markerList) {
+    const el = m.__labelEl;
+    if (!el) continue;
+    el.style.display = showOne ? "grid" : "none";
+  }
+}
+
 /* ==== INIT MAP ==== */
 async function initMap(){
   // Rensa ev. dubblett #map
@@ -305,15 +345,15 @@ async function initMap(){
 
   let pins = [];
   let markers = [];
-  let activeMarkers = [];   // ← de markörer som clusterern hanterar just nu (filter = subset)
+  let activeMarkers = [];   // markörer som clusterer hanterar just nu (filter = subset)
   let clusterer = null;
   const infoWindow = new google.maps.InfoWindow();
 
-  // === indexhjälp för att bara söka ORT/POSTNR ===
+  // indexhjälp för att bara söka ORT/POSTNR
   function parseZipCity(address){
     const raw = String(address || "");
-    const m = raw.match(/\b(\d{3}\s?\d{2})\b/);     // 12345 eller 123 45
-    const zip = m ? m[1].replace(/\s/g,"") : "";    // "12345"
+    const m = raw.match(/\b(\d{3}\s?\d{2})\b/); // 12345 eller 123 45
+    const zip = m ? m[1].replace(/\s/g,"") : "";
     let city = "";
     const parts = raw.split(",").map(s=>s.trim()).filter(Boolean);
     if (parts.length >= 2) city = parts[parts.length - 1];
@@ -321,7 +361,7 @@ async function initMap(){
     return { zip, city };
   }
 
-  // Räkna synliga inom viewport för activeMarkers
+  // räkna synliga inom viewport för activeMarkers
   function updateBadgeByViewport() {
     if (!activeMarkers.length) { setBadge(0); return; }
     const bounds = map.getBounds();
@@ -338,7 +378,7 @@ async function initMap(){
     const data = await fetchPickupPlaces();
     pins = Array.isArray(data?.Pins) ? data.Pins : (Array.isArray(data) ? data : []);
 
-    // För varje pin: skapa marker (låter clusterer äga visningen)
+    // Bygg markörer (låter clusterer äga visningen)
     const bounds = new google.maps.LatLngBounds();
     markers = [];
     for(const p of pins){
@@ -354,24 +394,23 @@ async function initMap(){
       bounds.extend(pos);
     }
 
-    // Skapa index FÖR SÖKNING (enbart ort & postnummer)
+    // Skapa index för sök (enbart ort & postnummer)
     const idx = pins.map(p=>{
       const { zip, city } = parseZipCity(p.address);
-      return {
-        zipNorm:  norm(zip),     // t.ex. "12345"
-        cityNorm: norm(city),    // t.ex. "umea"
-        loc:      parseLocationString(p.location)
-      };
+      return { zipNorm: norm(zip), cityNorm: norm(city), loc: parseLocationString(p.location) };
     });
 
     // Klustrare (grön SDAB-stil)
-    activeMarkers = markers.slice(); // initialt – alla
+    activeMarkers = markers.slice(); // initialt alla
     clusterer = new markerClusterer.MarkerClusterer({
       map, markers: activeMarkers, renderer: { render: clusterRenderer }
     });
 
-    // Badge INIT (visa synliga i första vyn efter idle)
-    google.maps.event.addListenerOnce(map, "idle", updateBadgeByViewport);
+    // Init badge & single-pin labels efter första idle
+    google.maps.event.addListenerOnce(map, "idle", () => {
+      updateBadgeByViewport();
+      updateSinglePinLabels(map, activeMarkers);
+    });
 
     // Kamera INIT
     if(markers.length>1){
@@ -381,8 +420,14 @@ async function initMap(){
       map.setCenter(markers[0].position); map.setZoom(14);
     }
 
-    // Uppdatera badgen varje gång vyn ändras (pan/zoom/kluster-klick)
-    map.addListener("idle", updateBadgeByViewport);
+    // Uppdatera på vyändring
+    map.addListener("idle", () => {
+      updateBadgeByViewport();
+      updateSinglePinLabels(map, activeMarkers.length ? activeMarkers : markers);
+    });
+    map.addListener("zoom_changed", () => {
+      updateSinglePinLabels(map, activeMarkers.length ? activeMarkers : markers);
+    });
 
     // ====== SÖK/ FILTER: endast ORT eller POSTNR ======
     function matches(entry, tokens){
@@ -414,7 +459,7 @@ async function initMap(){
         }
       }
 
-      // Uppdatera clusterer med *endast* nästa lista
+      // Uppdatera clusterer med nästa lista (rör inte m.map)
       if (typeof clusterer.clearMarkers === "function") {
         clusterer.clearMarkers();
         if (next.length) clusterer.addMarkers(next);
@@ -423,7 +468,8 @@ async function initMap(){
       }
       activeMarkers = next;
 
-      // Uppdatera badge utifrån aktuell vy
+      // Uppdatera UI för vy/zoom och badge
+      updateSinglePinLabels(map, activeMarkers);
       updateBadgeByViewport();
 
       // kamera
